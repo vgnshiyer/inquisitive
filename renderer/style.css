@@ -1,0 +1,15 @@
+:root {
+  color-scheme: light dark;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+}
