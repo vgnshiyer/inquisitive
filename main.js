@@ -27,7 +27,9 @@ function createWindow() {
       backgroundThrottling: !headless,
     },
   });
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // With INQUISITIVE_EMPTY set, the window starts with an empty library, to see the pages as
+  // they are on a first launch.
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), process.env.INQUISITIVE_EMPTY ? { query: { empty: '1' } } : {});
   win.on('closed', () => {
     win = null;
   });

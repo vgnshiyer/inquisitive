@@ -7,6 +7,10 @@
   --line: color-mix(in srgb, var(--ink) 14%, transparent); /* the one outline colour */
   --hover: color-mix(in srgb, var(--ink) 6%, transparent);
   --tint: 16%; /* how much of its colour a card takes */
+  --raised: color-mix(in srgb, #fff 55%, var(--paper)); /* a menu's surface, a step above the paper */
+  --shadow: 0 10px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06); /* and what it casts */
+  --shadow-small: 0 4px 14px rgba(0, 0, 0, 0.1); /* what a tip casts */
+  --danger: #b8442f; /* for what removes something */
 
   /* Type: a serif for titles, a grotesk for everything else, a mono for numbers. */
   --font: 'Schibsted Grotesk Variable', -apple-system, BlinkMacSystemFont, sans-serif;
@@ -20,7 +24,7 @@
   --title-size: 22px; /* a card's title */
   --title-weight: 500; /* headings and card titles */
   --card-radius: 14px;
-  --card-ratio: 0.8; /* a card's width over its height: 4 to 5 */
+  --card-ratio: 0.9; /* a card's width over its height: 9 to 10 */
   --card-min: 208px; /* the narrowest a card gets before a row takes one fewer */
   --card-gap: 18px;
   --card-pad: 16px;
@@ -35,6 +39,10 @@
     --paper: #181613;
     --ink: #ece6da;
     --tint: 12%;
+    --raised: color-mix(in srgb, var(--ink) 7%, var(--paper));
+    --shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-small: 0 4px 16px rgba(0, 0, 0, 0.45);
+    --danger: #e8907c;
     color-scheme: dark;
   }
 }
@@ -324,6 +332,13 @@ h1 {
 .card:focus-visible,
 .tab:focus-visible,
 .tool:focus-visible,
+.pill:focus-visible,
+.sort:focus-visible,
+.band-bin:focus-visible,
+.band-dot:focus-visible,
+.swatch:focus-visible,
+.band-new:focus-visible,
+.begin-add:focus-visible,
 #crumbs .step:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
   outline-offset: 2px;
@@ -491,6 +506,479 @@ h1 {
 .card.lead .card-author {
   margin-bottom: 20px;
   font-size: calc(var(--text-size) + 1px);
+}
+
+/* Under Continue: the lead card, then a row of the next few as short cards. However many
+   there are, they share the row's width. */
+.going {
+  display: grid;
+  gap: var(--card-gap);
+}
+
+.cards.row {
+  grid-template-columns: repeat(auto-fit, minmax(var(--card-min), 1fr));
+}
+
+/* A short card: the same parts as any card, without the height. */
+.cards.short .card {
+  min-height: 148px;
+  aspect-ratio: auto;
+}
+
+.cards.short .card-title {
+  -webkit-line-clamp: 2;
+}
+
+.cards.short .card-author {
+  margin-bottom: 14px;
+  -webkit-line-clamp: 1;
+}
+
+/* ---------- an empty library ---------- */
+/* In place of items, on Home and Library: a quotation under a large mark, then what to do
+   and the button that does it. Set to the left, like everything else. */
+
+.begin {
+  max-width: 620px;
+  padding-top: 7vh;
+}
+
+.begin-mark {
+  display: block;
+  height: 52px;
+  color: var(--muted);
+  font: var(--title-weight) 112px / 1 var(--font-title);
+  user-select: none;
+}
+
+.begin-quote {
+  margin: 0;
+  font: var(--title-weight) 34px / 1.2 var(--font-title);
+  letter-spacing: -0.012em;
+}
+
+.begin-by {
+  margin: 14px 0 0;
+  color: var(--muted);
+}
+
+.begin-line {
+  margin: 44px 0 14px;
+  color: var(--soft);
+}
+
+.begin-add {
+  height: 36px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 500;
+  transition: background-color 0.12s ease;
+}
+
+.begin-add:hover {
+  background: color-mix(in srgb, var(--ink) 84%, var(--paper));
+}
+
+/* ---------- the Collections page ---------- */
+
+/* Above the shelves: the kinds to show, at the left, and the order to put them in, at the right. */
+.shelf-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 28px;
+}
+
+.pill,
+.sort {
+  height: 30px;
+  padding: 0 13px;
+  border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
+  border-radius: 15px;
+  background: transparent;
+  color: var(--soft);
+  font-size: calc(var(--text-size) - 1px);
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.pill:hover,
+.sort:hover,
+.sort[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.pill[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* The sort button: an icon and the order now in use. Its menu hangs beneath it. */
+.sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  padding-left: 10px;
+  color: var(--ink);
+}
+
+.sort-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background: var(--soft);
+  -webkit-mask: url(icons/sort-vertical-linear.svg) center / contain no-repeat;
+  mask: url(icons/sort-vertical-linear.svg) center / contain no-repeat;
+}
+
+/* ---------- tips ---------- */
+/* A small label beside something pointed at. It is made of what a menu is made of: the
+   raised surface, a hairline, a soft shadow. */
+
+.tip {
+  position: fixed;
+  z-index: 30;
+  padding: 5px 9px;
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  border-radius: 8px;
+  background: var(--raised);
+  box-shadow: var(--shadow-small);
+  color: var(--ink);
+  font-size: calc(var(--text-size) - 2px);
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.tip.on {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------- menus ---------- */
+/* One kind of menu serves everywhere: labelled groups parted by lines. */
+
+/* Its proportions: a row twice as tall as its text, an icon a little larger than the text,
+   and little air around either. */
+.menu {
+  position: fixed;
+  z-index: 10;
+  min-width: 200px;
+  max-width: 300px;
+  padding: 5px;
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  border-radius: 12px;
+  background: var(--raised);
+  box-shadow: var(--shadow);
+  font-size: var(--text-size);
+}
+
+.menu-label {
+  padding: 6px 7px 3px;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 2px);
+}
+
+.menu-line {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--line);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 7px;
+  outline: none;
+  background: transparent;
+  color: var(--soft);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/* The choice now in force. */
+.menu-item.on {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.menu-item.danger,
+.menu-item.danger:hover,
+.menu-item.danger:focus-visible {
+  color: var(--danger);
+}
+
+.menu-item.danger:hover,
+.menu-item.danger:focus-visible {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+.menu-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.menu-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+}
+
+.menu-icon[data-icon='open'] { mask-image: url(icons/notebook-minimalistic-bold.svg); }
+.menu-icon[data-icon='finished'] { mask-image: url(icons/check-circle-bold.svg); }
+.menu-icon[data-icon='restart'] { mask-image: url(icons/restart-bold.svg); }
+.menu-icon[data-icon='bin'] { mask-image: url(icons/trash-bin-minimalistic-bold.svg); }
+.menu-icon[data-icon='tick'] { mask-image: url(icons/check-linear.svg); }
+
+/* A collection's colour, standing where an icon would; an empty ring for no collection. */
+.menu-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  margin: 0 3px; /* as wide, with its margins, as an icon */
+  border-radius: 50%;
+  background: var(--hue, transparent);
+}
+
+.menu-dot:not([data-hue]) {
+  box-shadow: inset 0 0 0 1px var(--muted);
+}
+
+/* A shelf's grip: in the margin beside its line, shown when the line is pointed at. Dragging
+   it moves the shelf among the others. */
+.band-head {
+  position: relative;
+}
+
+.band-grip {
+  position: absolute;
+  top: 50%;
+  left: -30px; /* reaching the line's own edge, so the pointer can cross to it */
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 28px;
+  margin-top: -14px;
+  color: var(--muted);
+  opacity: 0;
+  cursor: grab;
+  touch-action: none;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.band-grip::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  -webkit-mask: url(icons/grip-vertical-bold.svg) center / contain no-repeat;
+  mask: url(icons/grip-vertical-bold.svg) center / contain no-repeat;
+}
+
+.band-head:hover .band-grip,
+.band.ghost .band-grip {
+  opacity: 1;
+}
+
+.band-grip:hover,
+.band.ghost .band-grip {
+  color: var(--ink);
+}
+
+/* While a shelf is being dragged: a copy of it goes with the pointer, with nothing behind
+   it, and the shelf itself stays on the page, faded, wherever letting go would put it. */
+body.dragging,
+body.dragging * {
+  cursor: grabbing !important;
+}
+
+.band {
+  position: relative;
+}
+
+.band.held {
+  opacity: 0.32;
+}
+
+.band.ghost {
+  position: fixed;
+  z-index: 20;
+  margin: 0;
+  pointer-events: none;
+}
+
+/* Let go, the copy slides onto the shelf's new place. */
+.band.ghost.settling {
+  transition: left 0.16s cubic-bezier(0.3, 0, 0.2, 1), top 0.16s cubic-bezier(0.3, 0, 0.2, 1);
+}
+
+/* A shelf's dot: its collection's colour, and the way to change it. */
+.band-dot {
+  position: relative;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--hue);
+  transition: box-shadow 0.12s ease;
+}
+
+.band-dot::after {
+  content: '';
+  position: absolute;
+  inset: -7px; /* easier to hit than it looks */
+}
+
+.band-dot:hover,
+.band-dot[aria-expanded='true'] {
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+/* A shelf's name: type over it to rename the collection. */
+.band-name {
+  margin: 0 -6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  outline: none;
+  cursor: text;
+  user-select: text;
+  white-space: nowrap;
+}
+
+.band-name:hover {
+  background: var(--hover);
+}
+
+.band-name:focus {
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--ink) 45%, transparent);
+}
+
+/* The colours to choose from, under the shelf's name. */
+.palette {
+  display: flex;
+  gap: 9px;
+  width: max-content;
+  margin: -2px 0 14px -2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--hue);
+  transition: box-shadow 0.12s ease;
+}
+
+.swatch:hover {
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 3px color-mix(in srgb, var(--ink) 35%, transparent);
+}
+
+.swatch[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--paper), 0 0 0 3.5px var(--ink);
+}
+
+/* On an empty collection's line, after the rule: the way to delete it. */
+.band-bin {
+  display: grid;
+  flex: none;
+  order: 1; /* after the rule, which the line draws last */
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -6px -5px -6px -2px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.band-bin::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  -webkit-mask: url(icons/trash-bin-minimalistic-linear.svg) center / contain no-repeat;
+  mask: url(icons/trash-bin-minimalistic-linear.svg) center / contain no-repeat;
+}
+
+.band-bin:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
+
+/* A shelf with nothing to show. */
+.band-none {
+  margin: 0;
+  padding: 2px 0 4px;
+  color: var(--muted);
+}
+
+/* Said before there are any collections, above the way to make the first. */
+.band-none.first {
+  margin-bottom: 16px;
+}
+
+/* The way to make another collection, at the foot of the page. */
+.band-new {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  margin-left: -8px;
+  padding: 0 14px 0 8px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--soft);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.band-new::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  -webkit-mask: url(icons/add-circle-linear.svg) center / contain no-repeat;
+  mask: url(icons/add-circle-linear.svg) center / contain no-repeat;
+}
+
+.band-new:hover {
+  background: var(--hover);
+  color: var(--ink);
 }
 
 /* ---------- reading ---------- */
