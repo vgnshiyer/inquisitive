@@ -1,5 +1,52 @@
 :root {
-  color-scheme: light dark;
+  /* Colours: warm paper and ink. Everything else is mixed from these. */
+  --paper: #f5f1e8;
+  --ink: #2a2622;
+  --soft: color-mix(in srgb, var(--ink) 66%, var(--paper));
+  --muted: color-mix(in srgb, var(--ink) 44%, var(--paper));
+  --line: color-mix(in srgb, var(--ink) 14%, transparent); /* the one outline colour */
+  --hover: color-mix(in srgb, var(--ink) 6%, transparent);
+  --tint: 16%; /* how much of its colour a card takes */
+
+  /* Type: a serif for titles, a grotesk for everything else, a mono for numbers. */
+  --font: 'Schibsted Grotesk Variable', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-title: 'Fraunces Variable', 'New York', ui-serif, Georgia, serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, 'SF Mono', Menlo, monospace;
+  --slide: 0.22s cubic-bezier(0.3, 0, 0.2, 1); /* the rail opening and closing */
+
+  /* Sizes and shapes: the values worth tuning, in one place. */
+  --text-size: 14px; /* everyday text; small labels are a step below it */
+  --h1-size: 42px; /* a page's heading */
+  --title-size: 22px; /* a card's title */
+  --title-weight: 500; /* headings and card titles */
+  --card-radius: 14px;
+  --card-ratio: 0.8; /* a card's width over its height: 4 to 5 */
+  --card-min: 208px; /* the narrowest a card gets before a row takes one fewer */
+  --card-gap: 18px;
+  --card-pad: 16px;
+  --card-line: 14%; /* how strong a card's outline is */
+  --card-lift: 3px; /* how far a card rises when pointed at */
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #181613;
+    --ink: #ece6da;
+    --tint: 12%;
+    color-scheme: dark;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --slide: 0s;
+  }
 }
 
 html,
@@ -10,6 +57,482 @@ body {
 
 body {
   display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: 44px minmax(0, 1fr);
+  background: var(--paper);
+  color: var(--ink);
+  font: 400 var(--text-size) / 1.4 var(--font);
+  letter-spacing: -0.01em;
+  cursor: default;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+/* ---------- top bar ---------- */
+
+#top {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 9px 0 89px; /* clear of the window buttons; the last icon 16px from the right edge, as they are from the left */
+  -webkit-app-region: drag;
+}
+
+/* The path, while reading: the tab you came from, which takes you back, then the title. */
+#crumbs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  margin-left: 7px;
+  font-weight: 500;
+}
+
+/* A button in the top bar: an icon, with a round wash behind it when pointed at. */
+.tool {
+  -webkit-app-region: no-drag;
+  display: grid;
+  flex: none;
   place-items: center;
-  font: 13px/1.4 -apple-system, BlinkMacSystemFont, sans-serif;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--soft);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.tool:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/* The one at the left widens the rail to show the tabs' names, and narrows it again. */
+#rail-toggle .icon { mask-image: url(icons/siderbar-outline.svg); }
+[data-tool='add'] .icon { mask-image: url(icons/add-circle-linear.svg); }
+[data-tool='search'] .icon { mask-image: url(icons/magnifier-linear.svg); }
+[data-tool='contents'] .icon { mask-image: url(icons/list-linear.svg); }
+
+body[data-screen='reading'] #rail-toggle {
+  display: none;
+}
+
+#crumbs .step {
+  -webkit-app-region: no-drag;
+  flex: none;
+  margin: 0 -6px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--soft);
+  font-weight: inherit;
+}
+
+#crumbs .step:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+#crumbs .sep {
+  flex: none;
+  color: var(--muted);
+}
+
+#crumbs .here {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tools {
+  display: flex;
+  gap: 2px;
+}
+
+body[data-screen='library'] #reading-tools,
+body[data-screen='reading'] #library-tools,
+body[data-view='settings'] #library-tools {
+  display: none;
+}
+
+/* ---------- the rail ---------- */
+/* One icon for each way of looking at the library; settings at the foot. */
+
+#rail {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 56px;
+  min-height: 0;
+  padding: 6px 10px 12px;
+  transition: width var(--slide);
+}
+
+body[data-rail='wide'] #rail {
+  width: 200px;
+}
+
+body[data-screen='reading'] #rail {
+  display: none;
+}
+
+/* A tab: its icon, and its name when the rail is wide. The icon sits in the same place
+   either way. */
+.tab {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 11px;
+  height: 36px;
+  padding: 0 7px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 18px; /* a pill; slim, the tab is as wide as it is tall, so a circle */
+  background: transparent;
+  color: var(--soft);
+  text-align: left;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+/* The name is always there; slim, the tab is too narrow to show it, so as the rail slides
+   open the name is uncovered, and fades in as it is. */
+.tab-name {
+  min-width: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: opacity var(--slide);
+}
+
+body[data-rail='wide'] .tab-name {
+  opacity: 1;
+}
+
+.tab:not(:disabled):not([aria-current='true']):hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/* The tab you are in: its icon is the filled one. */
+.tab[aria-current='true'] {
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+  color: var(--ink);
+  font-weight: 500;
+}
+
+/* Every icon is one of Solar's (renderer/icons), drawn at 22px, where its lines are a little
+   under 1.5px. The rail's have a linear and a bold form. */
+.icon {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  background: currentColor;
+  -webkit-mask: center / contain no-repeat;
+  mask: center / contain no-repeat;
+}
+
+.tab[data-tab='home'] .icon { mask-image: url(icons/home-2-linear.svg); }
+.tab[data-tab='library'] .icon { mask-image: url(icons/book-minimalistic-linear.svg); }
+.tab[data-tab='finished'] .icon { mask-image: url(icons/check-circle-linear.svg); }
+.tab[data-tab='collections'] .icon { mask-image: url(icons/library-linear.svg); }
+.tab[data-tab='settings'] .icon { mask-image: url(icons/settings-linear.svg); }
+
+.tab[data-tab='home'][aria-current='true'] .icon { mask-image: url(icons/home-2-bold.svg); }
+.tab[data-tab='library'][aria-current='true'] .icon { mask-image: url(icons/book-minimalistic-bold.svg); }
+.tab[data-tab='finished'][aria-current='true'] .icon { mask-image: url(icons/check-circle-bold.svg); }
+.tab[data-tab='collections'][aria-current='true'] .icon { mask-image: url(icons/library-bold.svg); }
+.tab[data-tab='settings'][aria-current='true'] .icon { mask-image: url(icons/settings-bold.svg); }
+
+.tab.foot {
+  margin-top: auto;
+}
+
+.count {
+  color: var(--muted);
+  font: 400 calc(var(--text-size) - 1px) / 1 var(--font-mono);
+  letter-spacing: 0;
+}
+
+/* ---------- library ---------- */
+
+main {
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink) 20%, transparent) transparent;
+}
+
+main[hidden] {
+  display: none;
+}
+
+/* The page: a column no wider than 1320px, kept to the left, under the sidebar button. */
+.shelf {
+  max-width: 1320px;
+  padding: 14px 40px 72px;
+}
+
+h1 {
+  margin: 0 0 24px;
+  font: var(--title-weight) var(--h1-size) / 1.1 var(--font-title);
+  letter-spacing: -0.015em;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--card-min), 1fr));
+  gap: var(--card-gap);
+}
+
+/* A card: what kind of thing it is, its title, who wrote it, and how far you are. Its colour
+   is its own, mixed into the paper. */
+.card {
+  display: flex;
+  flex-direction: column;
+  aspect-ratio: var(--card-ratio);
+  min-width: 0;
+  padding: calc(var(--card-pad) - 2px) var(--card-pad) calc(var(--card-pad) - 3px);
+  border: 1px solid color-mix(in srgb, var(--ink) var(--card-line), transparent);
+  border-radius: var(--card-radius);
+  background: color-mix(in srgb, var(--hue) var(--tint), var(--paper));
+  text-align: left;
+  transition: transform 0.16s ease, border-color 0.16s ease;
+}
+
+.card:hover,
+.card:focus-visible {
+  border-color: color-mix(in srgb, var(--ink) 30%, transparent);
+  transform: translateY(calc(-1 * var(--card-lift)));
+}
+
+.card:focus-visible,
+.tab:focus-visible,
+.tool:focus-visible,
+#crumbs .step:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+  outline-offset: 2px;
+}
+
+.card-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 9px;
+  color: var(--soft);
+  font-size: calc(var(--text-size) - 1px);
+}
+
+.card-title {
+  display: -webkit-box;
+  margin: 0 0 7px;
+  overflow: hidden;
+  font: var(--title-weight) var(--title-size) / 1.2 var(--font-title);
+  letter-spacing: -0.01em;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+}
+
+.card-author {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--soft);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* The foot: a line showing how far you are, then the place in words ("34%", "New",
+   "Finished"). Pointed at, the words give way to an arrow. */
+.card-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 24px;
+  margin-top: auto;
+}
+
+.meter {
+  flex: 1;
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(to right, color-mix(in srgb, var(--ink) 62%, transparent) var(--done), color-mix(in srgb, var(--ink) 13%, transparent) var(--done));
+}
+
+.card-end {
+  display: grid;
+  align-items: center;
+  justify-items: end;
+  min-width: 8ch; /* room for "Finished", so every card's line is the same length */
+  font: 400 calc(var(--text-size) - 1px) / 1 var(--font-mono);
+}
+
+.card-end > * {
+  grid-area: 1 / 1;
+}
+
+.card-place {
+  color: var(--soft);
+  font: inherit;
+  letter-spacing: 0;
+  transition: opacity 0.16s ease;
+}
+
+.card-go {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--ink);
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.card-go::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  background: var(--paper);
+  -webkit-mask: url(icons/arrow-right-linear.svg) center / contain no-repeat;
+  mask: url(icons/arrow-right-linear.svg) center / contain no-repeat;
+}
+
+.card:hover .card-place,
+.card:focus-visible .card-place {
+  opacity: 0;
+}
+
+.card:hover .card-go,
+.card:focus-visible .card-go {
+  opacity: 1;
+  transform: none;
+}
+
+
+/* The colours a card can take: one for each collection (app.js says which), and 7, the
+   plain one, for an item in no collection. */
+[data-hue='0'] { --hue: #86c05f; }
+[data-hue='1'] { --hue: #9a82e6; }
+[data-hue='2'] { --hue: #cfc650; }
+[data-hue='3'] { --hue: #62b4dc; }
+[data-hue='4'] { --hue: #c4946a; }
+[data-hue='5'] { --hue: #e07fb0; }
+[data-hue='6'] { --hue: #e6975f; }
+[data-hue='7'] { --hue: #a39d92; }
+
+/* A named stretch of the library: its name and count, a rule running to the edge, then its cards. */
+
+.band {
+  margin: 0 0 36px;
+}
+
+.band-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  font-size: calc(var(--text-size) + 1px);
+  font-weight: 500;
+}
+
+.band-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  margin-left: 6px;
+  background: var(--line);
+}
+
+/* The lead card, on Home: the thing to carry on with, across the page. The same parts as any
+   card, larger. */
+.card.lead {
+  width: 100%;
+  min-height: 196px;
+  aspect-ratio: auto;
+  padding: calc(var(--card-pad) + 4px) calc(var(--card-pad) + 8px) calc(var(--card-pad) + 2px);
+}
+
+/* Kind and length sit together at the left here; set apart, they would be a page-width away. */
+.card.lead .card-head {
+  justify-content: flex-start;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: var(--text-size);
+}
+
+.card.lead .card-head span + span::before {
+  content: '·';
+  margin-right: 6px; /* as far from the dot as the gap before it */
+}
+
+.card.lead .card-title {
+  margin-bottom: 8px;
+  font-size: calc(var(--title-size) * 1.5);
+  line-height: 1.15;
+  -webkit-line-clamp: 2;
+}
+
+.card.lead .card-author {
+  margin-bottom: 20px;
+  font-size: calc(var(--text-size) + 1px);
+}
+
+/* ---------- reading ---------- */
+
+#reading {
+  grid-column: 1 / -1;
+}
+
+#page {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 44px 40px 96px;
+}
+
+#page h2 {
+  margin: 0 0 6px;
+  font: var(--title-weight) 32px / 1.15 var(--font-title);
+  letter-spacing: -0.015em;
+}
+
+#page .byline {
+  margin: 0 0 34px;
+  color: var(--soft);
+}
+
+/* Until there is a reader, lines stand where the words will be. */
+#page .line {
+  height: 7px;
+  margin: 0 0 15px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--ink) 11%, transparent);
+}
+
+#page .line.end {
+  margin-bottom: 34px;
+}
+
+#progress {
+  position: fixed;
+  right: 18px;
+  bottom: 14px;
+  color: var(--muted);
+  font: 400 12px/1 var(--font-mono);
+  letter-spacing: 0;
 }

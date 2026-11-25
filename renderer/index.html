@@ -4,10 +4,51 @@
     <meta charset="utf-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'" />
     <title>Inquisitive</title>
+    <link rel="stylesheet" href="../node_modules/@fontsource-variable/schibsted-grotesk/index.css" />
+    <link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css" />
+    <link rel="stylesheet" href="../node_modules/@fontsource-variable/fraunces/index.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
-  <body>
-    <main>Inquisitive</main>
+  <body data-screen="library">
+    <!-- Top bar: the window buttons, the button that widens the rail (or, while reading, the
+         way back), and the screen's own buttons. -->
+    <header id="top">
+      <button id="rail-toggle" class="tool" type="button" aria-controls="rail"><span class="icon" aria-hidden="true"></span></button>
+      <nav id="crumbs" aria-label="Where you are"></nav>
+      <div id="library-tools" class="tools">
+        <button class="tool" type="button" data-tool="add" aria-label="Add to library"><span class="icon" aria-hidden="true"></span></button>
+        <button class="tool" type="button" data-tool="search" aria-label="Search library"><span class="icon" aria-hidden="true"></span></button>
+      </div>
+      <div id="reading-tools" class="tools">
+        <button class="tool" type="button" data-tool="contents" aria-label="Contents"><span class="icon" aria-hidden="true"></span></button>
+      </div>
+    </header>
+
+    <!-- The rail: one icon for each way of looking at the library, and Settings at its foot.
+         Widened, it shows each one's name beside its icon.
+         The icons are Solar's (renderer/icons), placed by style.css. -->
+    <nav id="rail" aria-label="Library">
+      <button class="tab" type="button" data-tab="home" aria-label="Home"><span class="icon" aria-hidden="true"></span><span class="tab-name">Home</span></button>
+      <button class="tab" type="button" data-tab="library" aria-label="Library"><span class="icon" aria-hidden="true"></span><span class="tab-name">Library</span></button>
+      <button class="tab" type="button" data-tab="finished" aria-label="Finished"><span class="icon" aria-hidden="true"></span><span class="tab-name">Finished</span></button>
+      <button class="tab" type="button" data-tab="collections" aria-label="Collections"><span class="icon" aria-hidden="true"></span><span class="tab-name">Collections</span></button>
+      <button class="tab foot" type="button" data-tab="settings" aria-label="Settings"><span class="icon" aria-hidden="true"></span><span class="tab-name">Settings</span></button>
+    </nav>
+
+    <!-- The library: whatever the rail has chosen. -->
+    <main id="library">
+      <div class="shelf">
+        <h1 id="heading">Home</h1>
+        <div id="shelf-body"></div>
+      </div>
+    </main>
+
+    <!-- Reading: the page has the whole window. -->
+    <main id="reading" hidden>
+      <article id="page"></article>
+      <span id="progress"></span>
+    </main>
+
     <script src="app.js"></script>
   </body>
 </html>
