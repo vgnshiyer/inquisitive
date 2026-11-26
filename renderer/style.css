@@ -8,6 +8,9 @@
 @property --raised { syntax: '<color>'; inherits: true; initial-value: #fbf9f4; }
 @property --leaf-light { syntax: '<number>'; inherits: true; initial-value: 0.9; }
 @property --leaf-opacity { syntax: '<number>'; inherits: true; initial-value: 1; }
+/* The rail's width is a length in its own right for the same reason: the rail and the page
+   beside it both read it as it changes, so they move as one. */
+@property --rail-width { syntax: '<length>'; inherits: true; initial-value: 56px; }
 
 :root {
   /* Colours: warm paper and ink. Everything else is mixed from these. */
@@ -41,6 +44,12 @@
   --card-pad: 16px;
   --card-line: 14%; /* how strong a card's outline is */
   --card-lift: 3px; /* how far a card rises when pointed at */
+  --font-serif: 'Literata Variable', 'New York', ui-serif, Georgia, serif; /* the reader's other face */
+  --read-font: var(--font); /* the face of what is being read: --font or --font-serif */
+  --read-size: 17px; /* and its size */
+  --read-leading: 1.7; /* its line height */
+  --read-width: 620px; /* the widest its column gets */
+  --sheet-width: 760px; /* the widest a PDF's page gets */
   /* Whether the paper is a light one or a dark one, which decides how a PDF's page is laid on
      it (see .leaf), and how light the page's marks are on a dark one: about the ink. */
   --tone: light;
@@ -271,25 +280,35 @@ body[data-view='settings'] #library-tools {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: 56px;
+  width: var(--rail-width);
   min-height: 0;
   padding: 6px 10px 12px;
   overflow: hidden;
-  transition: width var(--slide), padding var(--slide), opacity var(--slide), visibility 0s;
+  transition: padding var(--slide), opacity var(--slide), visibility 0s;
 }
 
-body[data-rail='wide'] #rail {
-  width: 200px;
+/* How wide the rail is: slim, wide, or (while reading) not there. It changes by degrees, and
+   the page reads it too, to keep clear of the rail. */
+body {
+  --rail-width: 56px;
+  transition: --rail-width var(--slide);
+}
+
+body[data-rail='wide'] {
+  --rail-width: 200px;
+}
+
+body[data-screen='reading'] {
+  --rail-width: 0px;
 }
 
 /* While reading, the rail slides away, and slides back when you leave. */
 body[data-screen='reading'] #rail {
-  width: 0;
   padding-right: 0;
   padding-left: 0;
   opacity: 0;
   visibility: hidden;
-  transition: width var(--slide), padding var(--slide), opacity var(--slide), visibility 0s 0.22s;
+  transition: padding var(--slide), opacity var(--slide), visibility 0s 0.22s;
 }
 
 /* A tab: its icon, and its name when the rail is wide. The icon sits in the same place
@@ -371,24 +390,28 @@ body[data-rail='wide'] .tab-name {
 
 /* ---------- library ---------- */
 
-main {
+/* (The app's own two, by where they are: a book may have a main or an h1 of its own.) */
+body > main {
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--ink) 20%, transparent) transparent;
 }
 
-main[hidden] {
+body > main[hidden] {
   display: none;
 }
 
-/* The page: a column no wider than 1320px, kept to the left, under the sidebar button. */
+/* The page: a column no wider than 1320px, in the middle of the window, so the space at its
+   two sides is even. The sidebar opens into the space at the left and the page stays where
+   it is; only in a window too narrow for that does the sidebar push the page along. */
 .shelf {
   max-width: 1320px;
+  margin-left: max(0px, calc(50vw - 660px - var(--rail-width)));
   padding: 14px 40px 72px;
 }
 
-h1 {
+#heading {
   margin: 0 0 24px;
   font: var(--title-weight) var(--h1-size) / 1.1 var(--font-title);
   letter-spacing: -0.015em;
@@ -1242,7 +1265,7 @@ body.dragging * {
   font-size: 13px;
 }
 
-#page h2 {
+#page:not(.book) h2 {
   margin: 0;
   font: var(--title-weight) 34px / 1.15 var(--font-title);
   letter-spacing: -0.015em;
@@ -1264,6 +1287,151 @@ body.dragging * {
 #page h2 + .text,
 #page .byline + .text {
   margin-top: 36px;
+}
+
+/* A real book: its sections one under another, in the reader's own type. The book's own
+   styling is left behind (book.js); these give its structure a plain, even look. */
+#page.book {
+  font-family: var(--read-font);
+  font-size: var(--read-size);
+  line-height: var(--read-leading);
+  letter-spacing: 0;
+  overflow-wrap: break-word;
+}
+
+/* One section. A new one starts well clear of the last. */
+.part + .part {
+  margin-top: 72px;
+}
+
+/* How a book's structure looks when the book itself says nothing: a plain, even default.
+   These are in a layer of their own, beneath everything else, so that the book's styling
+   (such of it as is let in: see book.js) takes their place where it speaks. */
+@layer book {
+  .book p {
+    margin: 0 0 1.1em;
+  }
+
+  .book h1,
+  .book h2,
+  .book h3,
+  .book h4,
+  .book h5,
+  .book h6 {
+    margin: 1.7em 0 0.7em;
+    font-family: var(--font-title);
+    font-weight: var(--title-weight);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+
+  .book h1 { font-size: 2em; }
+  .book h2 { font-size: 1.55em; }
+  .book h3 { font-size: 1.25em; }
+  .book h4,
+  .book h5,
+  .book h6 { font-size: 1.05em; }
+
+  .book figure {
+    margin: 1.5em 0;
+  }
+
+  .book figcaption,
+  .book small {
+    color: var(--soft);
+    font-size: 0.85em;
+  }
+
+  .book blockquote {
+    margin: 1.3em 0;
+    padding-left: 1.2em;
+    border-left: 2px solid var(--line);
+    color: var(--soft);
+  }
+
+  .book ul,
+  .book ol {
+    margin: 0 0 1.1em;
+    padding-left: 1.5em;
+  }
+
+  .book li {
+    margin-bottom: 0.3em;
+  }
+
+  .book a[href] {
+    color: inherit;
+    text-decoration: underline;
+    text-decoration-color: var(--muted);
+    text-underline-offset: 0.15em;
+    cursor: pointer;
+  }
+
+  .book sup,
+  .book sub {
+    line-height: 0;
+    font-size: 0.75em;
+  }
+
+  .book hr {
+    margin: 2.2em 0;
+    border: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .book pre,
+  .book code {
+    font-family: var(--font-mono);
+    font-size: 0.88em;
+  }
+
+  .book pre {
+    overflow-x: auto;
+    margin: 0 0 1.1em;
+    line-height: 1.5;
+  }
+
+  .book table {
+    width: 100%;
+    margin: 0 0 1.2em;
+    border-collapse: collapse;
+    font-size: 0.92em;
+  }
+
+  .book th,
+  .book td {
+    padding: 0.45em 0.6em;
+    border-bottom: 1px solid var(--line);
+    text-align: left;
+    vertical-align: top;
+  }
+
+  /* The old way of setting a paragraph to one side. */
+  .book [align='left'] { text-align: left; }
+  .book [align='right'] { text-align: right; }
+  .book [align='center'] { text-align: center; }
+}
+
+/* What holds whatever the book says. A section that opens with its heading has no gap above
+   it; a picture is never wider than the column; long lines of code wrap. */
+/* A section that opens with its heading: no gap above it. */
+#page.book .part > :first-child,
+#page.book .part > :first-child > :first-child {
+  margin-top: 0;
+}
+
+#page.book img,
+#page.book svg {
+  max-width: 100% !important;
+  height: auto;
+}
+
+#page.book pre {
+  white-space: pre-wrap;
+}
+
+.book-none {
+  color: var(--soft);
 }
 
 /* A PDF: its pages as sheets, one under another. A sheet is a piece of the theme's paper, and
@@ -1298,6 +1466,74 @@ body.dragging * {
   background: #fff;
   mix-blend-mode: multiply;
   opacity: var(--leaf-opacity);
+}
+
+/* A real page's words: an unseen copy of its text over the picture of it, for selecting and
+   copying. PDF.js places each run (pdf.js); these are the rules its placing relies on, taken
+   from its own stylesheet, with the selection coloured from the theme's ink. */
+.words {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  width: 100% !important; /* PDF.js gives it a size of its own; it is the sheet's */
+  height: 100% !important;
+  overflow: clip;
+  font-family: sans-serif;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-align: initial;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  --scale-round-x: 1px;
+  --scale-round-y: 1px;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size, 1));
+  --min-font-size-inv: calc(1 / var(--min-font-size, 1));
+}
+
+.words :is(span, br) {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+
+.words > :not(.markedContent),
+.words .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.words .markedContent {
+  display: contents;
+}
+
+.words span[role='img'] {
+  cursor: default;
+  user-select: none;
+}
+
+.words ::selection {
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
+  color: transparent;
+}
+
+.words br::selection {
+  background: transparent;
+}
+
+/* A real page is a canvas, the size of its sheet. */
+canvas.leaf {
+  width: 100%;
+  height: 100%;
+  padding: 0;
 }
 
 :root[data-tone='dark'] .leaf {

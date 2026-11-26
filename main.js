@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, nativeTheme, screen } = require('electron');
 const path = require('node:path');
+const library = require('./library.js');
 
 // A test run can keep its window off the screen (INQUISITIVE_HEADLESS=1), so it does not get
 // in the way of whoever is at the Mac.
@@ -30,9 +31,9 @@ function createWindow() {
       backgroundThrottling: !headless,
     },
   });
-  // With INQUISITIVE_EMPTY set, the window starts with an empty library, to see the pages as
-  // they are on a first launch.
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), process.env.INQUISITIVE_EMPTY ? { query: { empty: '1' } } : {});
+  // With INQUISITIVE_SAMPLE set, the window shows stand-in items in place of the library and
+  // keeps nothing: for working on how the app looks.
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), process.env.INQUISITIVE_SAMPLE ? { query: { sample: '1' } } : {});
   win.on('closed', () => {
     win = null;
   });
@@ -78,6 +79,7 @@ ipcMain.on('watch-pointer', (event, on) => {
 });
 
 app.whenReady().then(() => {
+  library.listen();
   createWindow();
   app.on('activate', () => {
     if (!win) createWindow();

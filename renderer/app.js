@@ -1,8 +1,10 @@
 'use strict';
 
-// The layout only: a rail of tabs, the library beside it, and a page that takes the window
-// when something is opened. There is no real library or reader yet, so the shelf is stocked
-// with stand-ins.
+// A rail of tabs, the library beside it, and a page that takes the window when something is
+// opened. The library is kept by the main process (library.js): the books in a folder, and a
+// file of what is known about them. EPUBs and PDFs can be added and read; articles cannot
+// yet. Opened with ?sample the app shows the stand-ins below instead, and keeps nothing: that
+// is for working on how it looks.
 // The stand-in books' chapters, for the reader's contents.
 const CHAPTERS = {
   geb: ['The MU-puzzle', 'Meaning and Form in Mathematics', 'Figure and Ground', 'Consistency, Completeness, and Geometry', 'Recursive Structures and Processes', 'The Location of Meaning', 'The Propositional Calculus', 'Typographical Number Theory', 'Mumon and Gödel', 'Levels of Description, and Computer Systems', 'Brains and Thoughts', 'Minds and Thoughts', 'BlooP and FlooP and GlooP', 'On Formally Undecidable Propositions of TNT and Related Systems', 'Jumping out of the System', 'Self-Ref and Self-Rep', 'Church, Turing, Tarski, and Others', 'Artificial Intelligence: Retrospects', 'Artificial Intelligence: Prospects', 'Strange Loops, Or Tangled Hierarchies'],
@@ -10,7 +12,8 @@ const CHAPTERS = {
   gene: ['Why Are People?', 'The Replicators', 'Immortal Coils', 'The Gene Machine', 'Aggression: Stability and the Selfish Machine', 'Genesmanship', 'Family Planning', 'Battle of the Generations', 'Battle of the Sexes', 'You Scratch My Back, I’ll Ride on Yours', 'Memes: The New Replicators', 'Nice Guys Finish First', 'The Long Reach of the Gene'],
   hamming: ['Orientation', 'Foundations of the Digital Revolution', 'History of Computers: Hardware', 'History of Computers: Software', 'History of Computer Applications', 'Limits of Computer Applications: AI I', 'Artificial Intelligence II', 'Artificial Intelligence III', 'n-Dimensional Space', 'Coding Theory I', 'Coding Theory II', 'Error-Correcting Codes', 'Information Theory', 'Digital Filters I', 'Digital Filters II', 'Digital Filters III', 'Digital Filters IV', 'Simulation I', 'Simulation II', 'Simulation III', 'Fiber Optics', 'Computer-Aided Instruction', 'Mathematics', 'Quantum Mechanics', 'Creativity', 'Experts', 'Unreliable Data', 'Systems Engineering', 'You Get What You Measure', 'You and Your Research'],
 };
-// The stand-in items. A book also has its chapters, and the one it is open at.
+// The stand-in items. A book also has its chapters, and the one it is open at. Their dates
+// are written as days ago, and turned into times when they are used.
 const SAMPLE = [
   { id: 'geb', kind: 'book', title: 'Gödel, Escher, Bach', author: 'Douglas Hofstadter', pages: 777, progress: 0.34, added: 40, opened: 0, collection: 'math', chapters: CHAPTERS.geb, chapter: 7 },
   { id: 'shannon', kind: 'pdf', title: 'A Mathematical Theory of Communication', author: 'Claude Shannon', pages: 55, progress: 0.12, added: 12, opened: 3, collection: 'math' },
@@ -42,10 +45,10 @@ const FILTERS = [
   ['pdf', 'PDFs', 'PDFs'],
   ['article', 'Articles', 'articles'],
 ];
-const ago = (days) => days ?? Infinity; // something never opened was opened longest ago
+const when = (time) => time ?? 0; // something never opened was opened longest ago
 const SORTS = [
-  ['Last opened', [['opened', 'Recently opened', (a, b) => ago(a.opened) - ago(b.opened)], ['unopened', 'Longest unopened', (a, b) => ago(b.opened) - ago(a.opened)]]],
-  ['Date added', [['added', 'Recently added', (a, b) => a.added - b.added], ['oldest', 'Oldest added', (a, b) => b.added - a.added]]],
+  ['Last opened', [['opened', 'Recently opened', (a, b) => when(b.opened) - when(a.opened)], ['unopened', 'Longest unopened', (a, b) => when(a.opened) - when(b.opened)]]],
+  ['Date added', [['added', 'Recently added', (a, b) => b.added - a.added], ['oldest', 'Oldest added', (a, b) => a.added - b.added]]],
   ['Title', [['az', 'A → Z', (a, b) => a.title.localeCompare(b.title)], ['za', 'Z → A', (a, b) => b.title.localeCompare(a.title)]]],
   ['Progress', [['most', 'Most read', (a, b) => b.progress - a.progress], ['least', 'Least read', (a, b) => a.progress - b.progress]]],
 ];
@@ -76,11 +79,36 @@ function el(tag, className, text) {
   return node;
 }
 
-// Opened with ?empty (main.js does it when INQUISITIVE_EMPTY is set), the app starts as it
-// would the first time: nothing in the library, no collections. A stand-in, like SAMPLE.
-const FRESH = new URLSearchParams(location.search).has('empty');
-if (FRESH) collections.length = 0;
-let items = FRESH ? [] : SAMPLE;
+const DAY = 864e5;
+/** How many days ago a time was, by the calendar: 0 for today, 1 for yesterday. */
+const daysSince = (time) => Math.round((new Date().setHours(0, 0, 0, 0) - new Date(time).setHours(0, 0, 0, 0)) / DAY);
+
+// Opened with ?sample (main.js does it when INQUISITIVE_SAMPLE is set), the app shows the
+// stand-ins and keeps nothing. Otherwise its items and collections are the library's, which
+// arrive a moment after the window opens (see the foot of this file) and are kept as they
+// change (save).
+const SAMPLING = new URLSearchParams(location.search).has('sample');
+const past = (days) => (days == null ? undefined : Date.now() - days * DAY);
+let items = SAMPLING ? SAMPLE.map((item) => ({ ...item, added: past(item.added), opened: past(item.opened), finished: past(item.finished) })) : [];
+if (!SAMPLING) collections.length = 0;
+
+let kept = ''; // the library as it was last kept
+let keeping = 0;
+
+/** Keeps the library, a moment after it last changed; at once, if asked. */
+function save(now) {
+  if (SAMPLING) return;
+  clearTimeout(keeping);
+  const write = () => {
+    const state = JSON.stringify({ items, collections });
+    if (state === kept) return;
+    kept = state;
+    window.api.library.save(JSON.parse(state));
+  };
+  if (now) write();
+  else keeping = setTimeout(write, 400);
+}
+window.addEventListener('beforeunload', () => save(true));
 
 // What an empty library shows in place of items: a line worth reading.
 const QUOTE = { text: 'The only true wisdom is in knowing you know nothing.', by: 'Socrates' };
@@ -168,7 +196,8 @@ function closeMenu() {
 /** Open a menu. Of its entries, a string is a group's label, null is a dividing line, and
     the rest are things to choose: { name, run } with, if wanted, an icon, a collection's
     colour (hue; null for none), a lead (a number before the name), on (it is the current
-    choice), tick, or danger. `at` is a button to hang the menu from, or the point { x, y }
+    choice), tick, danger, or indent (how deep it is nested). `at` is a button to hang the
+    menu from, or the point { x, y }
     to open it at. A long menu is only so tall, and scrolls, opening at the current choice. */
 function openMenu(entries, at, long) {
   closeMenu();
@@ -197,6 +226,7 @@ function openMenu(entries, at, long) {
         if (entry.hue !== null) dot.dataset.hue = entry.hue;
         item.append(dot);
       }
+      if (entry.indent) item.style.paddingLeft = 7 + 14 * entry.indent + 'px'; // one nested under another
       if (entry.lead) item.append(el('span', 'menu-lead', entry.lead));
       item.append(el('span', 'menu-name', entry.name));
       if (entry.tick) item.append(icon('tick', 'menu-icon'));
@@ -279,12 +309,15 @@ function choose(id) {
 const lengthOf = (item) => (item.pages ? item.pages + ' pages' : item.minutes ? item.minutes + ' min' : '');
 
 /** When an item was last open, in words. */
-const openedOf = (item) => (item.opened === 0 ? 'Opened today' : item.opened === 1 ? 'Opened yesterday' : `Opened ${item.opened} days ago`);
+function openedOf(item) {
+  const days = daysSince(item.opened);
+  return days <= 0 ? 'Opened today' : days === 1 ? 'Opened yesterday' : `Opened ${days} days ago`;
+}
 
 /** When an item was finished, in words: "Finished 16 Nov", with the year if it is not this one. */
 function finishedOf(item) {
   if (item.finished == null) return 'Finished';
-  const on = new Date(Date.now() - item.finished * 864e5);
+  const on = new Date(item.finished);
   const year = on.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' };
   return 'Finished ' + on.toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...year });
 }
@@ -298,7 +331,8 @@ function card(item, lead, dated) {
   made.type = 'button';
   made.dataset.hue = hueOf(item);
   const head = el('span', 'card-head');
-  head.append(el('span', '', KINDS[item.kind]), el('span', '', lengthOf(item)));
+  head.append(el('span', '', KINDS[item.kind]));
+  if (lengthOf(item)) head.append(el('span', '', lengthOf(item))); // a real book has no count of pages
   if (lead) head.append(el('span', '', openedOf(item)));
   const end = el('span', 'card-end');
   const foot = el('span', 'card-foot');
@@ -347,13 +381,17 @@ function cardMenu(item) {
   const done = item.progress >= 1;
   return [
     { name: 'Open', icon: 'open', run: () => read(item) },
-    done ? { name: 'Mark as unread', icon: 'restart', run: change(() => ((item.progress = 0), delete item.finished)) } : { name: 'Mark as finished', icon: 'finished', run: change(() => ((item.progress = 1), (item.finished = 0))) },
+    // A book marked unread opens at its start again; one marked finished, at its end.
+    done
+      ? { name: 'Mark as unread', icon: 'restart', run: change(() => ((item.progress = 0), delete item.finished, delete item.at)) }
+      : { name: 'Mark as finished', icon: 'finished', run: change(() => ((item.progress = 1), (item.finished = Date.now()), item.sections && (item.at = { section: item.sections - 1, part: 1 }))) },
     null,
     'Move to',
     ...collections.map((c) => ({ name: c.name, hue: c.hue, tick: item.collection === c.id, run: change(() => (item.collection = c.id)) })),
     { name: 'No collection', hue: null, tick: !collections.some((c) => c.id === item.collection), run: change(() => delete item.collection) },
     null,
-    { name: 'Remove from library', icon: 'bin', danger: true, run: change(() => (items = items.filter((other) => other !== item))) },
+    // Taken out of the library, a book's file goes to the Trash.
+    { name: 'Remove from library', icon: 'bin', danger: true, run: change(() => ((items = items.filter((other) => other !== item)), item.file && window.api.library.discard(item.file))) },
   ];
 }
 
@@ -377,8 +415,8 @@ function band(name, body, count) {
     next few. One left unopened for a month drops out, though the count is of all you have
     started. Gives the section, and the items shown in it. */
 function going() {
-  const started = items.filter((item) => item.progress > 0 && item.progress < 1).sort((a, b) => a.opened - b.opened);
-  const [lead, ...rest] = started.filter((item) => item.opened <= STALE);
+  const started = items.filter((item) => item.progress > 0 && item.progress < 1).sort((a, b) => when(b.opened) - when(a.opened));
+  const [lead, ...rest] = started.filter((item) => daysSince(when(item.opened)) <= STALE);
   if (!lead) return { bands: [], under: [] };
   const more = rest.slice(0, MORE);
   const made = el('div', 'going');
@@ -389,14 +427,14 @@ function going() {
 
 /** Home: what to carry on with, then the latest additions. */
 /** What Home and Library show while the library has nothing in it: a quotation, set large
-    under its mark, then what to do and the button that does it. (The button does nothing
-    yet: there is no way to add.) */
+    under its mark, then what to do and the button that does it. */
 function begin() {
   const made = el('div', 'begin');
   const mark = el('span', 'begin-mark', '“');
   mark.setAttribute('aria-hidden', 'true');
   const add = el('button', 'begin-add', 'Add to library');
   add.type = 'button';
+  add.addEventListener('click', () => addToLibrary());
   made.append(mark, el('p', 'begin-quote', QUOTE.text), el('p', 'begin-by', QUOTE.by), el('p', 'begin-line', 'Add a book, a PDF or an article to begin.'), add);
   return made;
 }
@@ -405,7 +443,7 @@ function home() {
   if (!items.length) return [begin()];
   const { bands, under } = going();
   // What is already under Continue is not shown a second time.
-  const recent = items.filter((item) => !under.includes(item)).sort((a, b) => a.added - b.added).slice(0, RECENT);
+  const recent = items.filter((item) => !under.includes(item)).sort((a, b) => b.added - a.added).slice(0, RECENT);
   return [...bands, ...(recent.length ? [band('Recently added', grid(recent))] : [])];
 }
 
@@ -654,7 +692,7 @@ function shelf(collection, list) {
     // The name is kept as it is typed, so nothing is lost if the page is redrawn meanwhile.
     let before = collection.name;
     name.addEventListener('focus', () => (before = collection.name));
-    name.addEventListener('input', () => (collection.name = name.textContent.trim() || before)); // a name cannot be emptied
+    name.addEventListener('input', () => ((collection.name = name.textContent.trim() || before), save())); // a name cannot be emptied
     name.addEventListener('keydown', (e) => {
       if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         // From the keyboard: Option with an up or down arrow moves the shelf one place.
@@ -669,7 +707,7 @@ function shelf(collection, list) {
       }
       if (e.key !== 'Enter' && e.key !== 'Escape') return;
       e.preventDefault();
-      if (e.key === 'Escape') collection.name = before; // Escape leaves the name as it was
+      if (e.key === 'Escape') (collection.name = before), save(); // Escape leaves the name as it was
       name.blur();
     });
     name.addEventListener('blur', () => (name.textContent = collection.name));
@@ -726,13 +764,49 @@ function shelves() {
   ];
 }
 
+/** Adds books to the library: they are chosen in a dialog, copied into the library's folder,
+    and read for their title and author. What cannot be read as an EPUB is named, and its
+    copy thrown away. */
+async function addToLibrary(paths) {
+  if (SAMPLING) return; // the stand-ins are all there is
+  const { added, failed } = await window.api.library.add(paths); // (only a test run may name the files)
+  for (const { file, name, kind } of added) {
+    const item = { id: 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind, file, title: name, author: '', added: Date.now(), progress: 0 };
+    try {
+      if (kind === 'pdf') {
+        const pdf = await Pdf.open(item);
+        item.title = pdf.title || name; // many PDFs give no title of their own
+        item.author = pdf.author;
+        item.pages = item.sections = pdf.pages;
+        Pdf.close(pdf);
+      } else {
+        const book = await Book.open(item);
+        item.title = book.title || name;
+        item.author = book.author;
+        item.sections = book.sections.length;
+      }
+      items.push(item);
+    } catch {
+      failed.push(name);
+      window.api.library.discard(file);
+    }
+  }
+  if (added.length) drawShelf();
+  addToLibrary.failed = failed; // (for a test run to see)
+  if (failed.length) window.api.library.notify(`${failed.join(', ')} could not be added. Only PDFs, and EPUB books without copy protection, can be read for now.`);
+}
+document.querySelector('[data-tool="add"]').addEventListener('click', () => addToLibrary());
+
+/** Draws the page the rail has chosen. Whatever changes the library draws it again, so this
+    is also where the library is kept. */
 function drawShelf() {
+  save();
   $('heading').textContent = tab.name;
   if (tab.home) return $('shelf-body').replaceChildren(...home());
   if (tab.shelves) return $('shelf-body').replaceChildren(...shelves());
   if (!tab.tools) {
     const list = items.filter(tab.test);
-    if (tab.dated) list.sort((a, b) => (a.finished ?? 0) - (b.finished ?? 0)); // the latest finished first
+    if (tab.dated) list.sort((a, b) => when(b.finished) - when(a.finished)); // the latest finished first
     return $('shelf-body').replaceChildren(list.length || !tab.empty ? grid(list, '', tab.dated) : el('p', 'band-none', tab.empty));
   }
   // Library: everything, of the kinds chosen, in the order chosen.
@@ -743,7 +817,9 @@ function drawShelf() {
 
 function showLibrary() {
   closePanel();
+  shut();
   open = null;
+  drawShelf(); // how far you got shows on the shelf
   wear();
   window.api.watchPointer(false);
   reveal(true, false);
@@ -802,17 +878,21 @@ function sheet(number) {
 function drawPage() {
   const item = open;
   const pdf = item.kind === 'pdf';
-  $('page').className = pdf ? 'sheets' : '';
+  $('page').className = pdf ? 'sheets' : item.file ? 'book' : '';
   $('reading').scrollTop = 0;
+  if (item.file) return void (pdf ? bindPdf(item) : bind(item)); // a real book or PDF
   if (pdf) return $('page').replaceChildren(...Array.from({ length: item.pages }, (_, i) => sheet(i + 1)));
   const head = item.chapters ? [el('p', 'over', 'Chapter ' + item.chapter), el('h2', '', item.chapters[item.chapter - 1])] : [el('h2', '', item.title), el('p', 'byline', item.author)];
   $('page').replaceChildren(...head, ...TEXT.map((words) => el('p', 'text', words)));
 }
 
 function read(item) {
+  shut();
   open = item;
+  item.opened = Date.now();
+  save();
   $('place').textContent = Math.round(item.progress * 100) + '%';
-  contentsTool.hidden = !item.chapters; // only what has chapters has contents
+  contentsTool.hidden = !item.chapters; // only what has chapters has contents (a real book says, once it is open)
   wear();
   zone = 'none';
   reveal(false, false);
@@ -824,13 +904,256 @@ function read(item) {
   drawCrumbs();
 }
 
+// ---------- a real book ----------
+// The whole book is one long page: a part for each of its sections, one under another. A
+// part is empty, and about as tall as its section is long, until the page comes near it;
+// then its words are fetched and it takes its true height. Where you are is the part at
+// the reading line (a little below the top of the window) and how far down that part the
+// line is, which holds whatever the size of the text.
+
+// The reading line: as far below the top of the window as the page's own top margin, which is
+// less for a PDF's sheets than for a book's text.
+const lineOf = () => (book.pdf ? 64 : 92);
+let book = null; // the book open: its sections, contents and parts, and whether it has found its place
+
+/** Opens a real book on the page, at the place it was left. */
+async function bind(item) {
+  const page = $('page');
+  page.replaceChildren();
+  let shape;
+  try {
+    shape = await Book.open(item);
+  } catch {
+    if (open === item) page.replaceChildren(el('p', 'book-none', 'This book could not be opened.'));
+    return;
+  }
+  if (open !== item) return; // left while it was opening
+  const parts = shape.sections.map((section, index) => {
+    const part = el('section', 'part');
+    part.dataset.index = index;
+    part.style.minHeight = Math.max(200, Math.round(section.size * 0.4)) + 'px'; // a guess at its height
+    return part;
+  });
+  page.replaceChildren(...parts);
+  // How much of the book lies before each section, by size.
+  const before = [0];
+  for (const section of shape.sections) before.push(before.at(-1) + section.size);
+  const mine = (book = { item, ...shape, parts, before, fetched: new Map(), dressed: new Set(), sheet: new CSSStyleSheet(), ready: false });
+  document.adoptedStyleSheets = [...document.adoptedStyleSheets, mine.sheet]; // the book's own styling, such of it as is kept
+  contentsTool.hidden = !shape.toc.length;
+  item.sections = parts.length;
+  const at = item.at ?? { section: 0, part: 0 };
+  await around(Math.min(at.section, parts.length - 1));
+  if (book !== mine) return;
+  seek(at);
+  mine.ready = true;
+  // From here the page fetches whatever it comes near.
+  mine.watch = new IntersectionObserver((seen) => seen.forEach((entry) => entry.isIntersecting && fill(Number(entry.target.dataset.index))), { root: $('reading'), rootMargin: '1400px 0px' });
+  parts.forEach((part) => mine.watch.observe(part));
+}
+
+/** Opens a real PDF on the page, at the place it was left. It is a book of another kind: each
+    page is a part, a sheet the shape of the page, blank until the page comes near it and
+    then drawn (and blank again once it is far away, so a long PDF does not fill the memory). */
+async function bindPdf(item) {
+  const page = $('page');
+  page.replaceChildren();
+  let pdf;
+  try {
+    pdf = await Pdf.open(item);
+  } catch {
+    if (open === item) page.replaceChildren(el('p', 'book-none', 'This PDF could not be opened.'));
+    return;
+  }
+  if (open !== item) return void Pdf.close(pdf); // left while it was opening
+  const parts = Array.from({ length: pdf.pages }, (_, index) => {
+    const sheet = el('div', 'sheet');
+    sheet.dataset.index = index;
+    sheet.style.aspectRatio = String(pdf.shapes[index]);
+    sheet.append(el('div', 'leaf'));
+    return sheet;
+  });
+  page.replaceChildren(...parts);
+  const mine = (book = { item, pdf, sections: parts.map(() => ({ size: 1 })), toc: pdf.toc, parts, before: Array.from({ length: parts.length + 1 }, (_, i) => i), fetched: new Map(), ready: false });
+  contentsTool.hidden = !pdf.toc.length;
+  item.pages = item.sections = parts.length;
+  seek(item.at ?? { section: 0, part: 0 });
+  mine.ready = true;
+  mine.watch = new IntersectionObserver((seen) => seen.forEach((entry) => (entry.isIntersecting ? fill : blank)(Number(entry.target.dataset.index))), { root: $('reading'), rootMargin: '1400px 0px' });
+  parts.forEach((part) => mine.watch.observe(part));
+}
+
+/** Draws a PDF's page onto its sheet, once. */
+function drawSheet(mine, index) {
+  if (!mine.fetched.has(index)) {
+    const sheet = mine.parts[index];
+    const done = ({ canvas, words, shape }) => {
+      if (book !== mine || mine.fetched.get(index) !== drawing) return; // shut, or put away, or drawn afresh meanwhile
+      canvas.className = 'leaf';
+      sheet.style.aspectRatio = String(shape);
+      sheet.replaceChildren(canvas, words);
+    };
+    sheet.dataset.drawn = sheet.clientWidth; // how wide it was drawn for
+    const drawing = Pdf.draw(mine.pdf.doc, index + 1, sheet.clientWidth).then(done, () => {});
+    mine.fetched.set(index, drawing);
+  }
+  return mine.fetched.get(index);
+}
+
+/** Makes a PDF's sheet blank again. */
+function blank(index) {
+  if (!book?.pdf || !book.fetched.has(index)) return;
+  book.fetched.delete(index);
+  book.parts[index].replaceChildren(el('div', 'leaf'));
+}
+
+/** Draws again the pages now drawn whose sheets have changed width. (One that has not is left
+    alone, and whatever is selected on it stays selected.) */
+function redraw() {
+  if (!book?.pdf) return;
+  for (const index of [...book.fetched.keys()]) {
+    if (Number(book.parts[index].dataset.drawn) === book.parts[index].clientWidth) continue;
+    book.fetched.delete(index);
+    drawSheet(book, index);
+  }
+}
+let widening = 0;
+window.addEventListener('resize', () => {
+  clearTimeout(widening);
+  widening = setTimeout(redraw, 250);
+});
+
+/** Fetches a section's words into its part, once. (For a PDF: draws the page.) */
+function fill(index) {
+  const mine = book;
+  if (!mine) return Promise.resolve();
+  if (mine.pdf) return drawSheet(mine, index);
+  if (!mine.fetched.has(index)) {
+    const part = mine.parts[index];
+    const done = (content) => {
+      if (content) part.replaceChildren(content);
+      part.style.minHeight = '';
+      mine.watch?.unobserve(part);
+    };
+    const fetch = async () => {
+      const { content, sheets, written } = await Book.section(mine.item, mine, index);
+      await dress(mine, sheets, written);
+      return content;
+    };
+    mine.fetched.set(index, fetch().then(done, () => done()));
+  }
+  return mine.fetched.get(index);
+}
+
+/** Lets in a section's styling: the stylesheets it asks for and what is written in its head,
+    each once for the book, tamed (book.js) and kept to the book's own parts. */
+async function dress(mine, sheets, written) {
+  const wear = (css) => {
+    const rules = Book.tame(css);
+    if (rules.length) mine.sheet.insertRule('@scope (.part) {\n' + rules.join('\n') + '\n}', mine.sheet.cssRules.length);
+  };
+  for (const path of sheets) {
+    if (mine.dressed.has(path)) continue;
+    mine.dressed.add(path);
+    wear(await window.api.library.text(mine.item.file, path).catch(() => ''));
+  }
+  if (written.trim() && !mine.dressed.has(written)) {
+    mine.dressed.add(written);
+    wear(written);
+  }
+}
+
+/** Fetches a section and the one on either side of it. A place is only found truly once
+    what is in sight around it has its real height; a part still empty there would grow
+    afterwards and push the place away. */
+const around = (index) => Promise.all([index - 1, index, index + 1].filter((i) => i >= 0 && i < book.parts.length).map(fill));
+
+/** How far down the page a thing is, from the top of all there is to scroll. */
+const depthOf = (node) => node.getBoundingClientRect().top - $('reading').getBoundingClientRect().top + $('reading').scrollTop;
+
+/** Where the reading line is: which section, and how far through that section. */
+function placeNow() {
+  const line = $('reading').scrollTop + lineOf();
+  let section = 0;
+  for (let i = 0; i < book.parts.length && depthOf(book.parts[i]) <= line + 1; i++) section = i; // (a pixel of leeway: a part brought exactly to the line is the one you are in)
+  const part = book.parts[section];
+  return { section, part: Math.max(0, Math.min(1, (line - depthOf(part)) / (part.offsetHeight || 1))) };
+}
+
+/** Brings a place to the reading line. */
+function seek({ section, part }) {
+  const to = book.parts[Math.min(section, book.parts.length - 1)];
+  $('reading').scrollTop = depthOf(to) + part * to.offsetHeight - lineOf();
+}
+
+/** Goes to a section, or to a named place within it: from the contents, or from a link. */
+async function go(section, place) {
+  const mine = book;
+  if (!mine.pdf) await around(section); // (a PDF's sheets have their true height already)
+  if (book !== mine) return;
+  const to = (place && mine.parts[section].querySelector('#' + CSS.escape('b-' + place))) || mine.parts[section];
+  $('reading').scrollTop = depthOf(to) - lineOf();
+  $('page').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease' }); // it arrives as a page does
+}
+
+/** Notes where you are: on the item (to come back to), in the corner, and in the library. How
+    far through the book that is goes by the sizes of its sections. At the very foot of the
+    last one, the book is finished. */
+function note() {
+  if (!book?.ready) return;
+  const { item, sections, before } = book;
+  const at = placeNow();
+  const reading = $('reading');
+  const end = reading.scrollTop + reading.clientHeight >= reading.scrollHeight - 4;
+  item.at = { section: at.section, part: Math.round(at.part * 1e4) / 1e4 };
+  item.progress = end ? 1 : Math.min(0.999, (before[at.section] + at.part * sections[at.section].size) / before.at(-1));
+  if (end) item.finished ??= Date.now();
+  else delete item.finished;
+  $('place').textContent = Math.round(item.progress * 100) + '%';
+  save();
+}
+
+/** Puts a real book away, noting where you were. */
+function shut() {
+  if (!book) return;
+  note();
+  book.watch?.disconnect();
+  document.adoptedStyleSheets = document.adoptedStyleSheets.filter((sheet) => sheet !== book.sheet);
+  Pdf.close(book.pdf);
+  book = null;
+  save(true);
+}
+
+let noting = false;
+$('reading').addEventListener('scroll', () => {
+  if (!book?.ready || noting) return;
+  noting = true;
+  requestAnimationFrame(() => {
+    noting = false;
+    note();
+  });
+}, { passive: true });
+
+// A link in a book leads to another place in it, or out to the web.
+$('page').addEventListener('click', (e) => {
+  const link = book && e.target.closest('a');
+  if (!link) return;
+  e.preventDefault();
+  if (link.dataset.out) return window.api.library.out(link.dataset.out);
+  const section = book.sections.findIndex((entry) => entry.path === link.dataset.to);
+  if (section >= 0) go(section, link.dataset.place);
+});
+
 // The contents: a book's chapters, in a menu hung from the top bar's contents button, open at
 // the chapter being read. Choosing one goes to it.
 const contentsTool = document.querySelector('[data-tool="contents"]');
 
 contentsTool.addEventListener('click', () => {
   if (menu?.owner === contentsTool) return closeMenu();
-  const chapters = open.chapters.map((name, i) => ({
+  // A real book's contents are its own: titles, some nested under others. The one being
+  // read is the last that starts at or before where you are.
+  const here = book?.ready ? book.toc.findLast((entry) => entry.section <= placeNow().section) : null;
+  const chapters = book ? book.toc.map((entry) => ({ name: entry.title, indent: entry.depth, on: entry === here, run: () => go(entry.section, entry.place) })) : open.chapters.map((name, i) => ({
     lead: String(i + 1),
     name,
     on: i + 1 === open.chapter,
@@ -940,6 +1263,7 @@ function setText() {
   const reading = $('reading');
   const room = () => reading.scrollHeight - reading.clientHeight;
   const at = room() > 0 ? reading.scrollTop / room() : 0;
+  const place = book?.ready ? placeNow() : null; // in a real book, the very line
   const root = document.documentElement.style;
   root.setProperty('--read-font', (FACES.find(([id]) => id === setting.face) ?? FACES[0])[2]);
   root.setProperty('--read-size', setting.size + 'px');
@@ -947,7 +1271,9 @@ function setText() {
   const width = WIDTHS.find(([id]) => id === setting.width) ?? WIDTHS[1];
   root.setProperty('--read-width', width[2] + 'px');
   root.setProperty('--sheet-width', width[3] + 'px');
-  reading.scrollTop = at * room();
+  if (place) seek(place);
+  else reading.scrollTop = at * room();
+  redraw(); // a PDF's pages, at their new width
   wear();
   localStorage.setItem('text', JSON.stringify(setting));
 }
@@ -1092,6 +1418,14 @@ document.addEventListener('click', (e) => {
   if (palette && !e.target.closest('.palette, .band-dot')) (palette = null), drawShelf();
 });
 
-drawRail();
-drawShelf();
-drawCrumbs();
+// The library arrives from the main process; then the first page can be drawn.
+(SAMPLING ? Promise.resolve(null) : window.api.library.load()).then((library) => {
+  if (library) {
+    items = library.items;
+    collections.push(...library.collections);
+    kept = JSON.stringify({ items, collections });
+  }
+  drawRail();
+  drawShelf();
+  drawCrumbs();
+});
