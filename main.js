@@ -33,7 +33,12 @@ function createWindow() {
   });
   // With INQUISITIVE_SAMPLE set, the window shows stand-in items in place of the library and
   // keeps nothing: for working on how the app looks.
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), process.env.INQUISITIVE_SAMPLE ? { query: { sample: '1' } } : {});
+  const query = {};
+  if (process.env.INQUISITIVE_SAMPLE) query.sample = '1';
+  // A test run (off-screen, or with a library of its own) goes without the opening, so
+  // nothing has to wait for it; INQUISITIVE_OPENING=1 keeps it, for testing the opening.
+  if ((headless || process.env.INQUISITIVE_LIBRARY) && !process.env.INQUISITIVE_OPENING) query.quiet = '1';
+  win.loadFile(path.join(__dirname, 'renderer', 'index.html'), { query });
   // The window never leaves its own page: a file dropped on it, for one, is not opened in it.
   win.webContents.on('will-navigate', (event, url) => {
     if (url !== win.webContents.getURL()) event.preventDefault();
@@ -83,6 +88,8 @@ ipcMain.on('watch-pointer', (event, on) => {
 });
 
 app.whenReady().then(() => {
+  // Run from source, the Dock would show Electron's own icon; this gives it the app's.
+  if (process.platform === 'darwin' && !app.isPackaged) app.dock.setIcon(path.join(__dirname, 'assets', 'icon.png'));
   library.listen();
   createWindow();
   app.on('activate', () => {

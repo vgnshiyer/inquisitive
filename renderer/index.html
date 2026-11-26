@@ -9,8 +9,12 @@
     <link rel="stylesheet" href="../node_modules/@fontsource-variable/fraunces/index.css" />
     <link rel="stylesheet" href="../node_modules/@fontsource-variable/literata/index.css" />
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="opening.css" />
   </head>
   <body data-screen="library">
+    <!-- The opening: the app's name over the window while it starts (opening.css, opening.js). -->
+    <div id="opening" aria-hidden="true"><div class="logo"><span class="word">inquisitive</span><span class="mark">*</span></div></div>
+    <script src="opening.js"></script>
     <!-- Top bar: the window buttons, the button that widens the rail (or, while reading, the
          path back), and the screen's own buttons. While reading it keeps out of sight until
          the pointer comes up to it. -->

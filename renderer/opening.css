@@ -1,0 +1,54 @@
+/* The opening: when the app starts, its name rises into place over the window and the
+   asterisk lands after it; then the window is uncovered. opening.js plays it. */
+
+/* The name is set in Fraunces with all of its axes (the app's titles use a lighter file that
+   has weight alone), so it is its own face here. */
+@font-face {
+  font-family: 'Fraunces Logo';
+  src: url('../node_modules/@fontsource-variable/fraunces/files/fraunces-latin-full-normal.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: block;
+}
+
+#opening {
+  position: fixed;
+  inset: 0;
+  z-index: 100; /* over everything else in the window */
+  display: grid;
+  place-items: center;
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-app-region: drag; /* the window can still be moved while it plays */
+}
+
+#opening .logo {
+  visibility: hidden; /* until its face has loaded and it starts to play */
+  font-family: 'Fraunces Logo', var(--font-title);
+  font-size: 64px;
+  line-height: 1;
+  font-weight: 400;
+  font-optical-sizing: none;
+  font-variation-settings: 'opsz' 144, 'SOFT' 100, 'WONK' 0;
+  white-space: nowrap;
+}
+
+#opening.on .logo {
+  visibility: visible;
+}
+
+#opening span {
+  display: inline-block;
+}
+
+/* The asterisk: heavier than the name, raised to its top. It turns and grows about the point
+   where its arms meet, which is not the middle of its box. */
+#opening .mark {
+  position: relative;
+  top: -0.12em;
+  margin-left: 0.04em;
+  font-size: 0.62em;
+  font-weight: 700;
+  vertical-align: top;
+  transform-origin: 0.27125em 0.366em;
+}
