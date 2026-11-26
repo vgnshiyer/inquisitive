@@ -215,6 +215,7 @@ button:not(:disabled) {
 [data-tool='add'] .icon { mask-image: url(icons/add-circle-linear.svg); }
 [data-tool='search'] .icon { mask-image: url(icons/magnifier-linear.svg); }
 [data-tool='find'] .icon { mask-image: url(icons/magnifier-linear.svg); }
+[data-tool='lights'] .icon { mask-image: url(icons/highlighter-linear.svg); }
 [data-tool='contents'] .icon { mask-image: url(icons/list-linear.svg); }
 [data-tool='text'] .icon { mask-image: url(icons/text-square-linear.svg); }
 
@@ -1344,6 +1345,39 @@ body > main[hidden] {
   padding: 8px 8px 6px;
   color: var(--soft);
   font-size: calc(var(--text-size) - 1px);
+}
+
+/* The list of highlights: find's panel without the field. Each is its words beside a rule
+   of its colour, two lines of them at most, and its note under them. */
+.lights:focus {
+  outline: none;
+}
+
+.lights .finder-list {
+  margin-top: 0;
+}
+
+.lights .finder-none {
+  padding: 7px 8px;
+}
+
+.lights-quote,
+.lights-note {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.lights-quote {
+  padding-left: 8px;
+  border-left: 2px solid var(--hue);
+  color: var(--ink);
+}
+
+.lights-note {
+  margin-top: 5px;
+  white-space: pre-line;
 }
 
 /* The text panel: a menu's surface, holding rows of choices in place of a list. Each row is

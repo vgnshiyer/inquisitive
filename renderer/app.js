@@ -203,6 +203,7 @@ function openMenu(entries, at, long) {
   closeMenu();
   closePanel();
   closeFind();
+  closeLights();
   const node = el('div', long ? 'menu long' : 'menu');
   node.setAttribute('role', 'menu');
   for (const entry of entries) {
@@ -1147,7 +1148,7 @@ function read(item) {
   save();
   $('place').textContent = Math.round(item.progress * 100) + '%';
   contentsTool.hidden = !item.chapters; // only what has chapters has contents (a real book says, once it is open)
-  findTool.hidden = !item.file; // a stand-in has no words of its own to look through
+  findTool.hidden = lightsTool.hidden = !item.file; // a stand-in has no words of its own to look through, or to highlight
   wear();
   zone = 'none';
   reveal(false, false);
@@ -1400,6 +1401,7 @@ function shut() {
   remark();
   drawFound();
   closePicker();
+  closeLights();
   if (writing) wrote();
   book.watch?.disconnect();
   document.adoptedStyleSheets = document.adoptedStyleSheets.filter((sheet) => sheet !== book.sheet);
@@ -1672,7 +1674,7 @@ function arrived(index) {
   layNotes();
 }
 
-/** Goes to one of what was found: it is brought a third of the way down the window. */
+/** Goes to one of what was found. */
 async function goFound(at) {
   const mine = book;
   const run = find;
@@ -1683,10 +1685,15 @@ async function goFound(at) {
   await (mine.pdf ? fill(hit.section) : around(hit.section));
   if (book !== mine || find !== run) return;
   paint();
+  bring(marks.get(hit.section)?.[hit.nth], hit.section);
+}
+
+/** Brings a stretch of the page a third of the way down the window; or, if it is not to be
+    seen there (the book hides its words, say), its part to the reading line. */
+function bring(range, section) {
   const reading = $('reading');
-  const range = marks.get(hit.section)?.[hit.nth];
   if (range?.getClientRects().length) reading.scrollTop += range.getBoundingClientRect().top - reading.getBoundingClientRect().top - reading.clientHeight * 0.3;
-  else reading.scrollTop = depthOf(mine.parts[hit.section]) - lineOf(); // its words are not to be seen on the page (the book hides them, say): its part, then
+  else reading.scrollTop = depthOf(book.parts[section]) - lineOf();
   $('page').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease' }); // it arrives as a page does
 }
 
@@ -1761,6 +1768,7 @@ function openFind() {
   if (finder) return finder.field.select();
   closeMenu();
   closePanel();
+  closeLights();
   hideTip();
   const kind = open.kind === 'pdf' ? 'PDF' : open.kind;
   const node = el('form', 'menu finder');
@@ -1980,6 +1988,7 @@ function openPicker(range, place, light) {
   closeMenu();
   closePanel();
   closeFind();
+  closeLights();
   const node = el('div', 'picker');
   node.setAttribute('role', 'toolbar');
   node.setAttribute('aria-label', 'Highlight');
@@ -2175,6 +2184,111 @@ const shaped = new ResizeObserver(layNotes);
 shaped.observe($('page'));
 shaped.observe($('reading'));
 
+// ---------- the list of highlights ----------
+// What is highlighted in what is open, listed in a panel hung from the top bar's highlights
+// button as find's is: each highlight's words beside a rule of its colour, its note under
+// them, under the chapter it is in (or, in a PDF, the page). Choosing one goes to it.
+
+const lightsTool = document.querySelector('[data-tool="lights"]');
+let lister = null; // the list of highlights, when it is open
+
+function closeLights() {
+  if (!lister) return;
+  lister.remove();
+  lister = null;
+  lightsTool.setAttribute('aria-expanded', 'false');
+  lightsTool.dataset.tip = lightsTool.getAttribute('aria-label');
+  settle();
+}
+
+/** Goes to a highlight. */
+async function goLight(light) {
+  const mine = book;
+  closeLights();
+  await (mine.pdf ? fill(light.section) : around(light.section));
+  if (book === mine) bring(lit.get(light.id), light.section);
+}
+
+async function openLights() {
+  const mine = book;
+  if (!mine) return;
+  closeMenu();
+  closePanel();
+  closeFind();
+  closePicker();
+  hideTip();
+  const kind = open.kind === 'pdf' ? 'PDF' : open.kind;
+  const node = el('div', 'menu finder lights');
+  node.setAttribute('role', 'dialog');
+  node.setAttribute('aria-label', 'Highlights');
+  node.tabIndex = -1;
+  const list = el('div', 'finder-list');
+  node.append(list);
+  lister = node;
+  lightsTool.setAttribute('aria-expanded', 'true');
+  delete lightsTool.dataset.tip; // open, the panel says what the button is for
+  settle();
+
+  // In the order they come in the book, each under the chapter it is in: which that is
+  // takes the words of its section, read once.
+  const kept = [...mine.lights].sort((a, b) => a.section - b.section || a.start - b.start);
+  const heads = await Promise.all(kept.map(async (light) => headOf(mine, light.section, light.start, mine.pdf ? null : ((await wordsOf(mine, light.section).catch(() => null))?.names ?? new Map()))));
+  if (lister !== node) return; // closed meanwhile
+  const rows = kept.map((light, index) => {
+    const row = el('button', 'finder-row');
+    row.type = 'button';
+    const quote = el('span', 'lights-quote', light.text.replace(/\s+/g, ' '));
+    quote.dataset.hue = light.hue;
+    row.append(quote);
+    if (light.note) row.append(el('span', 'lights-note', light.note));
+    row.addEventListener('click', () => goLight(light));
+    row.addEventListener('pointermove', () => at === index || mark(index));
+    if (heads[index] && heads[index] !== heads[index - 1]) list.append(el('div', 'finder-label', heads[index]));
+    list.append(row);
+    return row;
+  });
+  if (!rows.length) list.append(el('p', 'finder-none', `Nothing is highlighted in this ${kind} yet.`));
+  let at = -1; // the row marked: the one Return goes to
+  const mark = (index, show) => {
+    rows[at]?.classList.remove('on');
+    at = index;
+    rows[at].classList.add('on');
+    if (!show) return;
+    const box = rows[at].getBoundingClientRect();
+    const frame = list.getBoundingClientRect();
+    if (show === 'middle') list.scrollTop += box.top - frame.top - (frame.height - box.height) / 2;
+    else if (box.top < frame.top) list.scrollTop += box.top - frame.top;
+    else if (box.bottom > frame.bottom) list.scrollTop += box.bottom - frame.bottom;
+  };
+  node.addEventListener('keydown', (e) => {
+    if (!rows.length) return;
+    if (e.key === 'Enter') return void (e.preventDefault(), goLight(kept[at]));
+    if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+    e.preventDefault();
+    mark((at + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length, 'nearest');
+  });
+
+  document.body.append(node);
+  // Under its button, their right edges together, as a menu hangs.
+  const from = lightsTool.getBoundingClientRect();
+  const box = node.getBoundingClientRect();
+  node.style.left = Math.max(8, Math.min(from.right - box.width, innerWidth - box.width - 8)) + 'px';
+  node.style.top = from.bottom + 6 + 'px';
+  // It opens at where you are: the first highlight in the section being read, or after it.
+  const here = mine.ready ? placeNow().section : 0;
+  const near = kept.findIndex((light) => light.section >= here);
+  if (rows.length) mark(near < 0 ? rows.length - 1 : near, 'middle');
+  node.focus();
+}
+
+lightsTool.addEventListener('click', () => (lister ? closeLights() : openLights()));
+// A press anywhere else closes it, as does the window changing size or losing the keyboard.
+document.addEventListener('mousedown', (e) => {
+  if (lister && !lister.contains(e.target) && !lightsTool.contains(e.target)) closeLights();
+}, true);
+window.addEventListener('blur', closeLights);
+window.addEventListener('resize', closeLights);
+
 // While reading, the top bar and the place in the corner keep out of sight until the pointer
 // goes to where they are: the top of the window, the foot of it. The main process watches
 // the pointer and says which it is at.
@@ -2191,9 +2305,9 @@ function reveal(top, foot) {
 let zone = 'none'; // where the pointer is: 'top', 'foot' or 'none'
 
 /** Shows what the pointer has gone to. The bar also stays while the text panel, the find
-    panel or the contents hang from it. */
+    panel, the highlights or the contents hang from it. */
 function settle() {
-  if (open) reveal(Boolean(panel || menu || finder) || zone === 'top', zone === 'foot');
+  if (open) reveal(Boolean(panel || menu || finder || lister) || zone === 'top', zone === 'foot');
 }
 
 window.api.onPointer((now) => {
@@ -2369,6 +2483,7 @@ function closePanel() {
 function openPanel() {
   closeMenu();
   closeFind();
+  closeLights();
   panel = el('div', 'menu panel');
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', 'Text settings');
@@ -2425,6 +2540,7 @@ window.addEventListener('keydown', (e) => {
   else if (dialog) closeDialog(); // or a dialog,
   else if (panel) closePanel(); // or the text panel,
   else if (finder) closeFind(); // or the find panel,
+  else if (lister) closeLights(); // or the list of highlights,
   else if (open) showLibrary(); // or what is being read,
   else if (palette) (palette = null), drawShelf(); // or puts the colours away
 });
