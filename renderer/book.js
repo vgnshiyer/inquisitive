@@ -225,7 +225,6 @@ const Book = (() => {
       else picture.setAttribute('src', address(picture.getAttribute('src')));
       picture.removeAttribute('width');
       picture.removeAttribute('height');
-      picture.setAttribute('loading', 'lazy');
     }
     // A picture inside a drawing, which is how many covers are made.
     const XLINK = 'http://www.w3.org/1999/xlink';
@@ -256,5 +255,5 @@ const Book = (() => {
     return { content: clean, sheets, written };
   }
 
-  return { open, section, tame };
+  return { open, section, tame, BANNED };
 })();

@@ -24,6 +24,7 @@
   --raised: color-mix(in srgb, #fff 55%, var(--paper)); /* a menu's surface, a step above the paper */
   --shadow: 0 10px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06); /* and what it casts */
   --shadow-small: 0 4px 14px rgba(0, 0, 0, 0.1); /* what a tip casts */
+  --veil: rgba(0, 0, 0, 0.24); /* what dims the window behind a dialog */
   --danger: #b8442f; /* for what removes something */
 
   /* Type: a serif for titles, a grotesk for everything else, a mono for numbers. */
@@ -67,6 +68,7 @@
     --raised: color-mix(in srgb, var(--ink) 7%, var(--paper));
     --shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
     --shadow-small: 0 4px 16px rgba(0, 0, 0, 0.45);
+    --veil: rgba(0, 0, 0, 0.5);
     --danger: #e8907c;
     --tone: dark;
     color-scheme: dark;
@@ -454,6 +456,7 @@ body > main[hidden] {
 .swatch:focus-visible,
 .band-new:focus-visible,
 .begin-add:focus-visible,
+.fill:focus-visible,
 #crumbs .step:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
   outline-offset: 2px;
@@ -902,6 +905,283 @@ body > main[hidden] {
 .menu-icon[data-icon='restart'] { mask-image: url(icons/restart-bold.svg); }
 .menu-icon[data-icon='bin'] { mask-image: url(icons/trash-bin-minimalistic-bold.svg); }
 .menu-icon[data-icon='tick'] { mask-image: url(icons/check-linear.svg); }
+.menu-icon[data-icon='files'] { mask-image: url(icons/folder-with-files-bold.svg); }
+/* The dialog that adds to the library. A veil dims the window, and in the middle of it the
+   dialog: a menu's surface, larger. In it a field for a link with its button, a line saying
+   there is another way, and a place to drop files with a button that chooses them. */
+.veil {
+  -webkit-app-region: no-drag;
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--veil);
+  animation: arrive 0.16s ease both;
+}
+
+/* One that grows as it is used sits high in the window, so that its top stays put. */
+.veil.high {
+  place-items: start center;
+  padding-top: 16vh;
+}
+
+.modal {
+  width: min(480px, 100%);
+  padding: 22px 24px 24px;
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  border-radius: 20px;
+  background: var(--raised);
+  box-shadow: var(--shadow);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-title {
+  margin: 0;
+  font: var(--title-weight) var(--title-size) / 1.2 var(--font-title);
+  letter-spacing: -0.01em;
+}
+
+.modal-close {
+  margin: -2px -8px -2px 0; /* its cross, not its wash, keeps the dialog's margin */
+}
+
+.modal-close .icon {
+  width: 16px;
+  height: 16px;
+  mask-image: url(icons/close-linear.svg);
+}
+
+.modal-line {
+  margin: 6px 0 18px;
+  color: var(--soft);
+}
+
+/* The dialog that searches: a field with the search mark before it and, once something is
+   asked for, a list of what matches. One row is marked: the one Return will open. */
+.modal.search {
+  width: min(560px, 100%);
+  padding: 6px;
+}
+
+.search-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 12px;
+  color: var(--muted);
+  cursor: text;
+}
+
+.search-head .icon {
+  width: 20px;
+  height: 20px;
+  mask-image: url(icons/magnifier-linear.svg);
+}
+
+.search-field {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: calc(var(--text-size) + 2px);
+  letter-spacing: inherit;
+  user-select: text;
+}
+
+.search-field::placeholder {
+  color: var(--muted);
+}
+
+.search-list {
+  max-height: min(328px, calc(84vh - 120px));
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink) 20%, transparent) transparent;
+}
+
+.search-list[hidden] {
+  display: none;
+}
+
+.search-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.search-row.on {
+  background: var(--hover);
+}
+
+.search-name {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.search-title {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.search-by {
+  flex: 0 2 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+}
+
+.search-kind {
+  flex: none;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 1px);
+}
+
+.search-none {
+  margin: 0;
+  padding: 10px 12px 12px;
+  color: var(--soft);
+}
+
+/* A filled button: the ink's colour, the paper's for its words. */
+.fill {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--ink);
+  color: var(--paper);
+  font-weight: 500;
+  transition: background-color 0.12s ease;
+}
+
+.fill:hover {
+  background: color-mix(in srgb, var(--ink) 84%, var(--paper));
+}
+
+.add-row {
+  display: flex;
+  gap: 8px;
+}
+
+.add-field {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 18px;
+  outline: none;
+  background: var(--hover);
+  color: var(--ink);
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: text;
+  user-select: text;
+}
+
+.add-field:focus {
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
+.add-field::placeholder {
+  color: var(--muted);
+}
+
+.add-field:read-only {
+  color: var(--soft);
+}
+
+.add-said {
+  margin: 8px 16px 0;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 1px);
+}
+
+.add-said.wrong {
+  color: var(--danger);
+}
+
+/* "or …", with a rule either side of it. */
+.modal-or {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 18px 0;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 1px);
+}
+
+.modal-or::before,
+.modal-or::after {
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+  content: '';
+}
+
+.add-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  height: 188px;
+  border-radius: 14px;
+  background: var(--hover);
+  color: var(--soft);
+  transition: background-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.add-drop p {
+  margin: 0;
+}
+
+/* With files held over it. */
+.add-drop.over {
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 40%, transparent);
+}
+
+.fill .menu-icon {
+  margin-left: -3px;
+}
 
 /* The text panel: a menu's surface, holding rows of choices in place of a list. Each row is
    a name over a strip of buttons; of three, the one in force is filled, as in a menu. */
@@ -1252,6 +1532,12 @@ body.dragging * {
   animation: arrive 0.3s ease both;
 }
 
+/* What is selected on the page is washed with the theme's ink: the same in a book, an
+   article and a PDF (whose own rule, further down, also hides the unseen words over it). */
+#page ::selection {
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
+}
+
 @keyframes arrive {
   from {
     opacity: 0;
@@ -1428,6 +1714,26 @@ body.dragging * {
 
 #page.book pre {
   white-space: pre-wrap;
+}
+
+/* A saved article opens under its title, and beneath that who wrote it and the site it is
+   from, in the app's own type whatever the text is set in. */
+#page.article .part > header {
+  margin-bottom: 36px;
+}
+
+#page.article .part > header > h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+
+#page.article .part > header > p {
+  margin: 10px 0 0;
+  color: var(--soft);
+  font: 400 var(--text-size) / 1.4 var(--font);
+  letter-spacing: -0.01em;
 }
 
 .book-none {

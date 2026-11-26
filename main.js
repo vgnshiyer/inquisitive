@@ -34,6 +34,10 @@ function createWindow() {
   // With INQUISITIVE_SAMPLE set, the window shows stand-in items in place of the library and
   // keeps nothing: for working on how the app looks.
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'), process.env.INQUISITIVE_SAMPLE ? { query: { sample: '1' } } : {});
+  // The window never leaves its own page: a file dropped on it, for one, is not opened in it.
+  win.webContents.on('will-navigate', (event, url) => {
+    if (url !== win.webContents.getURL()) event.preventDefault();
+  });
   win.on('closed', () => {
     win = null;
   });

@@ -2,9 +2,9 @@
 
 // A rail of tabs, the library beside it, and a page that takes the window when something is
 // opened. The library is kept by the main process (library.js): the books in a folder, and a
-// file of what is known about them. EPUBs and PDFs can be added and read; articles cannot
-// yet. Opened with ?sample the app shows the stand-ins below instead, and keeps nothing: that
-// is for working on how it looks.
+// file of what is known about them. EPUBs and PDFs can be added and read, and articles saved
+// from the web. Opened with ?sample the app shows the stand-ins below instead, and keeps
+// nothing: that is for working on how it looks.
 // The stand-in books' chapters, for the reader's contents.
 const CHAPTERS = {
   geb: ['The MU-puzzle', 'Meaning and Form in Mathematics', 'Figure and Ground', 'Consistency, Completeness, and Geometry', 'Recursive Structures and Processes', 'The Location of Meaning', 'The Propositional Calculus', 'Typographical Number Theory', 'Mumon and Gödel', 'Levels of Description, and Computer Systems', 'Brains and Thoughts', 'Minds and Thoughts', 'BlooP and FlooP and GlooP', 'On Formally Undecidable Propositions of TNT and Related Systems', 'Jumping out of the System', 'Self-Ref and Self-Rep', 'Church, Turing, Tarski, and Others', 'Artificial Intelligence: Retrospects', 'Artificial Intelligence: Prospects', 'Strange Loops, Or Tangled Hierarchies'],
@@ -434,7 +434,7 @@ function begin() {
   mark.setAttribute('aria-hidden', 'true');
   const add = el('button', 'begin-add', 'Add to library');
   add.type = 'button';
-  add.addEventListener('click', () => addToLibrary());
+  add.addEventListener('click', openAdd);
   made.append(mark, el('p', 'begin-quote', QUOTE.text), el('p', 'begin-by', QUOTE.by), el('p', 'begin-line', 'Add a book, a PDF or an article to begin.'), add);
   return made;
 }
@@ -764,12 +764,13 @@ function shelves() {
   ];
 }
 
-/** Adds books to the library: they are chosen in a dialog, copied into the library's folder,
-    and read for their title and author. What cannot be read as an EPUB is named, and its
-    copy thrown away. */
-async function addToLibrary(paths) {
-  if (SAMPLING) return; // the stand-ins are all there is
-  const { added, failed } = await window.api.library.add(paths); // (only a test run may name the files)
+/** Adds books and PDFs to the library: they are chosen in a dialog, or are the files dropped
+    on the window; they are copied into the library's folder and read for their title and
+    author. What cannot be read is named, and its copy thrown away. Gives how many were added. */
+async function addToLibrary(paths, dropped) {
+  if (SAMPLING) return 0; // the stand-ins are all there is
+  const { added, failed } = await (dropped ? window.api.library.drop(dropped) : window.api.library.add(paths)); // (only a test run may name the files)
+  let kept = 0;
   for (const { file, name, kind } of added) {
     const item = { id: 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind, file, title: name, author: '', added: Date.now(), progress: 0 };
     try {
@@ -786,16 +787,268 @@ async function addToLibrary(paths) {
         item.sections = book.sections.length;
       }
       items.push(item);
+      kept++;
     } catch {
       failed.push(name);
       window.api.library.discard(file);
     }
   }
-  if (added.length) drawShelf();
+  if (kept) drawShelf();
   addToLibrary.failed = failed; // (for a test run to see)
   if (failed.length) window.api.library.notify(`${failed.join(', ')} could not be added. Only PDFs, and EPUB books without copy protection, can be read for now.`);
+  return kept;
 }
-document.querySelector('[data-tool="add"]').addEventListener('click', () => addToLibrary());
+
+// A dialog lies over the library, on a veil that dims the window. There are two: one adds to
+// the library, one searches it. Escape, or a press on the veil, closes whichever is open.
+let dialog = null; // the dialog that is open, if any: its veil, what lies behind it, and what was in hand before
+
+function closeDialog() {
+  if (!dialog) return;
+  dialog.node.remove();
+  for (const part of dialog.behind) part.inert = false;
+  dialog.from?.focus();
+  dialog = null;
+}
+
+/** Puts a dialog up: in the middle of the window, or, if it will grow as it is used, high in
+    it, so that its top stays where it is. */
+function openDialog(inside, high) {
+  closeMenu();
+  closePanel();
+  closeDialog();
+  hideTip();
+  const node = el('div', high ? 'veil high' : 'veil');
+  node.append(inside);
+  node.addEventListener('mousedown', (e) => e.target === node && closeDialog()); // a press on the veil closes it
+  // What lies behind cannot be reached while it is open.
+  const behind = [$('top'), $('rail'), $('library')];
+  const from = document.activeElement === document.body ? null : document.activeElement;
+  for (const part of behind) part.inert = true;
+  document.body.append(node);
+  dialog = { node, behind, from };
+}
+
+// Add: in the dialog a field for a link, to save an article from the web, and under that a
+// place to drop books and PDFs, with a button that chooses them instead.
+const addTool = document.querySelector('[data-tool="add"]');
+
+/** Opens the dialog. Return in the field, or the button beside it, saves the article at that
+    address; while it is being saved the dialog says so, and if it cannot be, why. Saved, the
+    dialog goes and the article is on the shelf. Files dropped on it, or chosen, are added as
+    books and PDFs are. */
+function openAdd() {
+  const form = el('form', 'modal');
+  form.setAttribute('role', 'dialog');
+  form.setAttribute('aria-modal', 'true');
+  form.setAttribute('aria-labelledby', 'add-title');
+
+  const title = el('h2', 'modal-title', 'Add to library');
+  title.id = 'add-title';
+  const close = el('button', 'tool modal-close');
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Close');
+  close.append(el('span', 'icon'));
+  close.addEventListener('click', closeDialog);
+  const head = el('div', 'modal-head');
+  head.append(title, close);
+
+  const field = el('input', 'add-field');
+  field.type = 'text';
+  field.inputMode = 'url';
+  field.placeholder = 'Paste a link';
+  field.spellcheck = false;
+  field.autocomplete = 'off';
+  field.setAttribute('aria-label', 'Link to an article');
+  const save = el('button', 'fill', 'Add link');
+  save.type = 'submit';
+  const row = el('div', 'add-row');
+  row.append(field, save);
+  const said = el('p', 'add-said');
+  said.setAttribute('aria-live', 'polite');
+  said.hidden = true;
+  const say = (words, wrong) => {
+    said.textContent = words;
+    said.hidden = !words;
+    said.classList.toggle('wrong', Boolean(wrong));
+  };
+  field.addEventListener('input', () => say('')); // a new address: what was wrong with the last is forgotten
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!field.value.trim() || field.readOnly) return field.focus();
+    const mine = dialog;
+    field.readOnly = true;
+    say('Saving…');
+    const { item, why } = await addArticle(field.value);
+    if (dialog !== mine) return; // closed meanwhile: it is saved all the same
+    if (item) return closeDialog();
+    field.readOnly = false;
+    say(why, true);
+    field.focus();
+    field.select();
+  });
+
+  const or = el('div', 'modal-or');
+  or.append(el('span', '', 'or add files from this Mac'));
+  const choose = el('button', 'fill');
+  choose.type = 'button';
+  const icon = el('span', 'menu-icon');
+  icon.dataset.icon = 'files';
+  choose.append(icon, 'Choose files');
+  // The dialog stays while the files are chosen, and goes once something has been added. If
+  // nothing is (the choosing was given up, or none of the files could be read) it is still there.
+  const add = async (...from) => {
+    const mine = dialog;
+    if ((await addToLibrary(...from)) && dialog === mine) closeDialog();
+  };
+  choose.addEventListener('click', () => add());
+  const drop = el('div', 'add-drop');
+  drop.append(el('p', '', 'Drop books and PDFs here'), choose);
+  // Files dragged over it show that it will take them; dropped, they are added.
+  drop.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    drop.classList.add('over');
+  });
+  drop.addEventListener('dragleave', (e) => drop.contains(e.relatedTarget) || drop.classList.remove('over'));
+  drop.addEventListener('drop', (e) => {
+    e.preventDefault();
+    drop.classList.remove('over');
+    const files = [...e.dataTransfer.files];
+    if (files.length) add(null, files);
+  });
+
+  form.append(head, el('p', 'modal-line', 'Save an article from its link, or add EPUB books and PDFs.'), row, said, or, drop);
+  openDialog(form);
+  field.focus();
+}
+
+addTool.addEventListener('click', openAdd);
+
+// Search: a field, and under it what in the library matches, by title, by who wrote it, by
+// the site it is from or the collection it is in. The arrow keys move through the list and
+// Return opens the one marked; so does a click.
+
+/** Text as it is compared: without accents or capitals. */
+const plainOf = (text) => String(text ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+
+/** The items that match what is asked for, the best first. Every word asked for must be
+    found in the item; a word found at the start of the title counts for most, then at the
+    start of a word in it, then anywhere in it, then at the start of a word of the author's
+    name, then of the rest. Equal matches come in the order they were last opened. */
+function matching(query) {
+  const starts = (text, word) => text.split(/[^\p{L}\p{N}]+/u).some((part) => part.startsWith(word));
+  const asked = plainOf(query).split(/\s+/).filter(Boolean);
+  if (!asked.length) return [];
+  const found = [];
+  for (const item of items) {
+    const title = plainOf(item.title);
+    const by = plainOf(item.author);
+    const rest = plainOf([item.site, collections.find((c) => c.id === item.collection)?.name].filter(Boolean).join(' '));
+    let score = 0;
+    for (const word of asked) {
+      const worth = title.startsWith(word) ? 5 : starts(title, word) ? 4 : title.includes(word) ? 3 : starts(by, word) ? 2 : starts(rest, word) ? 1 : 0;
+      if (!worth) {
+        score = 0;
+        break;
+      }
+      score += worth;
+    }
+    if (score) found.push({ item, score });
+  }
+  return found.sort((a, b) => b.score - a.score || when(b.item.opened ?? b.item.added) - when(a.item.opened ?? a.item.added)).map(({ item }) => item);
+}
+
+function openSearch() {
+  const form = el('form', 'modal search');
+  form.setAttribute('role', 'dialog');
+  form.setAttribute('aria-modal', 'true');
+  form.setAttribute('aria-label', 'Search library');
+  const field = el('input', 'search-field');
+  field.type = 'text';
+  field.placeholder = 'Search your library';
+  field.spellcheck = false;
+  field.autocomplete = 'off';
+  field.setAttribute('aria-label', 'Search your library');
+  const head = el('label', 'search-head');
+  head.append(el('span', 'icon'), field);
+  const list = el('div', 'search-list');
+  list.hidden = true;
+  form.append(head, list);
+
+  let found = [];
+  let at = 0; // the one marked
+  const mark = (index, show) => {
+    at = index;
+    [...list.children].forEach((row, i) => row.classList.toggle('on', i === at));
+    if (show) list.children[at]?.scrollIntoView({ block: 'nearest' });
+  };
+  const choose = (item) => {
+    closeDialog();
+    read(item);
+  };
+  field.addEventListener('input', () => {
+    found = matching(field.value).slice(0, 50);
+    list.hidden = !field.value.trim();
+    list.scrollTop = 0;
+    if (!found.length) return list.replaceChildren(el('p', 'search-none', 'Nothing in your library matches.'));
+    list.replaceChildren(...found.map((item, index) => {
+      const row = el('button', 'search-row');
+      row.type = 'button';
+      const name = el('span', 'search-name');
+      name.append(el('span', 'search-title', item.title), el('span', 'search-by', item.author));
+      row.append(name, el('span', 'search-kind', KINDS[item.kind]));
+      row.addEventListener('click', () => choose(item));
+      row.addEventListener('pointermove', () => at === index || mark(index));
+      return row;
+    }));
+    mark(0);
+  });
+  form.addEventListener('keydown', (e) => {
+    if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || !found.length) return;
+    e.preventDefault();
+    mark((at + (e.key === 'ArrowDown' ? 1 : -1) + found.length) % found.length, true);
+  });
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (found[at]) choose(found[at]);
+  });
+  openDialog(form, true);
+  field.focus();
+}
+
+document.querySelector('[data-tool="search"]').addEventListener('click', openSearch);
+
+/** Saves the article at a web address into the library: the page is fetched, the article
+    found in it and cleaned (article.js), and it and its pictures kept in a folder of their
+    own. Gives { item }, or { why } saying what went wrong. An address already saved gives
+    the item there is. */
+async function addArticle(address) {
+  if (SAMPLING) return { why: 'Nothing is kept while the stand-ins are showing.' };
+  let asked;
+  try {
+    asked = new URL(/^[a-z][a-z0-9+.-]*:/i.test(address.trim()) ? address.trim() : 'https://' + address.trim());
+    if (!/^https?:$/.test(asked.protocol) || !asked.hostname.includes('.') && asked.hostname !== 'localhost') throw new Error();
+  } catch {
+    return { why: 'That is not a web address.' };
+  }
+  const page = await window.api.library.page(asked.href);
+  if (page.error) return { why: page.error === 'not a page' ? 'That address is not a web page.' : 'That page could not be reached.' };
+  const already = items.find((item) => item.address === page.address);
+  if (already) return { item: already };
+  let found;
+  try {
+    found = Article.read(page.html, page.address);
+  } catch {
+    return { why: 'No article was found on that page.' };
+  }
+  const { file, error } = await window.api.library.keep({ title: found.title, html: found.html, pictures: found.pictures });
+  if (error) return { why: 'The article could not be saved.' };
+  const item = { id: 'i' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind: 'article', file, title: found.title, author: found.author || found.site, site: found.site, address: page.address, minutes: found.minutes, sections: 1, added: Date.now(), progress: 0 };
+  items.push(item);
+  drawShelf();
+  return { item };
+}
 
 /** Draws the page the rail has chosen. Whatever changes the library draws it again, so this
     is also where the library is kept. */
@@ -873,14 +1126,14 @@ function sheet(number) {
 }
 
 /** Sets out the page of what is open. A PDF is its own pages, as sheets one under another. A
-    book opens at its chapter, an article under its title and author; both have the same
-    words, for now. */
+    stand-in book opens at its chapter, a stand-in article under its title and author; both
+    have the same words. */
 function drawPage() {
   const item = open;
   const pdf = item.kind === 'pdf';
-  $('page').className = pdf ? 'sheets' : item.file ? 'book' : '';
+  $('page').className = pdf ? 'sheets' : !item.file ? '' : item.kind === 'article' ? 'book article' : 'book';
   $('reading').scrollTop = 0;
-  if (item.file) return void (pdf ? bindPdf(item) : bind(item)); // a real book or PDF
+  if (item.file) return void (pdf ? bindPdf(item) : bind(item)); // a real book, article or PDF
   if (pdf) return $('page').replaceChildren(...Array.from({ length: item.pages }, (_, i) => sheet(i + 1)));
   const head = item.chapters ? [el('p', 'over', 'Chapter ' + item.chapter), el('h2', '', item.chapters[item.chapter - 1])] : [el('h2', '', item.title), el('p', 'byline', item.author)];
   $('page').replaceChildren(...head, ...TEXT.map((words) => el('p', 'text', words)));
@@ -916,15 +1169,16 @@ function read(item) {
 const lineOf = () => (book.pdf ? 64 : 92);
 let book = null; // the book open: its sections, contents and parts, and whether it has found its place
 
-/** Opens a real book on the page, at the place it was left. */
+/** Opens a real book on the page, at the place it was left. (Or a saved article, which is
+    read as a book of one section.) */
 async function bind(item) {
   const page = $('page');
   page.replaceChildren();
   let shape;
   try {
-    shape = await Book.open(item);
+    shape = await (item.kind === 'article' ? Article : Book).open(item);
   } catch {
-    if (open === item) page.replaceChildren(el('p', 'book-none', 'This book could not be opened.'));
+    if (open === item) page.replaceChildren(el('p', 'book-none', `This ${item.kind === 'article' ? 'article' : 'book'} could not be opened.`));
     return;
   }
   if (open !== item) return; // left while it was opening
@@ -1030,10 +1284,14 @@ function fill(index) {
   if (mine.pdf) return drawSheet(mine, index);
   if (!mine.fetched.has(index)) {
     const part = mine.parts[index];
+    // A part has its true height only once its pictures have come (or failed to): it is
+    // not called fetched until then, though never kept waiting more than a couple of seconds.
     const done = (content) => {
       if (content) part.replaceChildren(content);
       part.style.minHeight = '';
       mine.watch?.unobserve(part);
+      const pictures = [...part.querySelectorAll('img')].filter((picture) => !picture.complete).map((picture) => new Promise((come) => (picture.onload = picture.onerror = come)));
+      return Promise.race([Promise.all(pictures), new Promise((enough) => setTimeout(enough, 2000))]);
     };
     const fetch = async () => {
       const { content, sheets, written } = await Book.section(mine.item, mine, index);
@@ -1086,12 +1344,15 @@ function seek({ section, part }) {
   $('reading').scrollTop = depthOf(to) + part * to.offsetHeight - lineOf();
 }
 
+/** A named place within a section of the book, if it is on the page. */
+const named = (section, place) => (place && !book.pdf ? book.parts[section].querySelector('#' + CSS.escape('b-' + place)) : null);
+
 /** Goes to a section, or to a named place within it: from the contents, or from a link. */
 async function go(section, place) {
   const mine = book;
   if (!mine.pdf) await around(section); // (a PDF's sheets have their true height already)
   if (book !== mine) return;
-  const to = (place && mine.parts[section].querySelector('#' + CSS.escape('b-' + place))) || mine.parts[section];
+  const to = named(section, place) || mine.parts[section];
   $('reading').scrollTop = depthOf(to) - lineOf();
   $('page').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease' }); // it arrives as a page does
 }
@@ -1151,8 +1412,11 @@ const contentsTool = document.querySelector('[data-tool="contents"]');
 contentsTool.addEventListener('click', () => {
   if (menu?.owner === contentsTool) return closeMenu();
   // A real book's contents are its own: titles, some nested under others. The one being
-  // read is the last that starts at or before where you are.
-  const here = book?.ready ? book.toc.findLast((entry) => entry.section <= placeNow().section) : null;
+  // read is the last that starts at or before where you are: in an earlier section, or in
+  // this one at or above the reading line.
+  const at = book?.ready ? placeNow().section : -1;
+  const line = $('reading').scrollTop + (book ? lineOf() : 0) + 1;
+  const here = book?.ready ? book.toc.findLast((entry) => entry.section < at || (entry.section === at && !(named(at, entry.place) && depthOf(named(at, entry.place)) > line))) : null;
   const chapters = book ? book.toc.map((entry) => ({ name: entry.title, indent: entry.depth, on: entry === here, run: () => go(entry.section, entry.place) })) : open.chapters.map((name, i) => ({
     lead: String(i + 1),
     name,
@@ -1408,6 +1672,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.key !== 'Escape') return;
   if (menu) closeMenu(); // Escape closes a menu,
+  else if (dialog) closeDialog(); // or a dialog,
   else if (panel) closePanel(); // or the text panel,
   else if (open) showLibrary(); // or what is being read,
   else if (palette) (palette = null), drawShelf(); // or puts the colours away
