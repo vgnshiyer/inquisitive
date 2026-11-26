@@ -25,6 +25,7 @@
   --hover-mix: 9%; /* behind what is pointed at */
   --press-mix: 14.5%; /* behind what is chosen: a step more */
   --wash: 48%; /* how much of its colour a highlight lays over the page */
+  --shade: 0%; /* and how much that colour is darkened first: on a paper of middling darkness (Dusk), where a pale wash would leave the ink hard to read */
   --select: rgba(31, 111, 229, 0.36); /* behind selected text: the one colour that is not paper, ink or a collection's */
   --tint: 16%; /* how much of its colour a card takes */
   --raised: color-mix(in srgb, #fff 55%, var(--paper)); /* a menu's surface, a step above the paper */
@@ -94,7 +95,7 @@
 [data-theme='white'] { --paper: #ffffff; --ink: #1c1b1a; }
 [data-theme='light'] { --paper: #f6f1e6; --ink: #40332a; }
 [data-theme='sepia'] { --paper: #eadfc8; --ink: #3a2f22; }
-[data-theme='dusk'] { --paper: #3b3936; --ink: #c2bcb0; }
+[data-theme='dusk'] { --paper: #3b3936; --ink: #cfc9bd; }
 [data-theme='dark'] { --paper: #181613; --ink: #ece6da; }
 [data-theme='black'] { --paper: #000000; --ink: #cfc9bd; }
 
@@ -139,7 +140,7 @@
 [data-theme='white'] { --soft-mix: 66%; --muted-mix: 53%; --line-mix: 14%; --hover-mix: 7.5%; --press-mix: 12%; --wash: 42%; }
 [data-theme='light'] { --soft-mix: 75.5%; --muted-mix: 60%; --line-mix: 15.5%; --hover-mix: 9%; --press-mix: 14.5%; --wash: 48%; }
 [data-theme='sepia'] { --soft-mix: 76%; --muted-mix: 62%; --line-mix: 16%; --hover-mix: 9.5%; --press-mix: 15%; --wash: 58%; }
-[data-theme='dusk'] { --soft-mix: 84%; --muted-mix: 66%; --line-mix: 14%; --hover-mix: 10%; --press-mix: 16%; --wash: 30%; --select: rgba(74, 144, 240, 0.32); }
+[data-theme='dusk'] { --soft-mix: 82%; --muted-mix: 58.5%; --line-mix: 12.5%; --hover-mix: 9.5%; --press-mix: 15%; --wash: 45%; --shade: 40%; --select: rgba(74, 144, 240, 0.32); }
 [data-theme='dark'] { --soft-mix: 66%; --muted-mix: 44%; --line-mix: 14%; --hover-mix: 6%; --press-mix: 9%; --wash: 42%; }
 [data-theme='black'] { --soft-mix: 66%; --muted-mix: 50%; --line-mix: 17%; --hover-mix: 9.5%; --press-mix: 13%; --wash: 40%; }
 
@@ -155,7 +156,7 @@
 }
 
 /* How light a turned-over page's marks are: about the theme's ink. */
-[data-theme='dusk'] { --leaf-light: 0.69; }
+[data-theme='dusk'],
 [data-theme='black'] { --leaf-light: 0.8; }
 
 * {
@@ -261,10 +262,10 @@ body[data-screen='reading'] #rail-toggle {
 
 /* While reading, the bar lies over the top of the page and keeps out of sight until the
    pointer comes up to it (app.js marks the body), or the keyboard reaches one of its buttons. */
-body[data-screen='reading'] #top {
   z-index: 2;
   grid-row: 1;
   background: var(--paper);
+body[data-screen='reading'] #top {
   opacity: 0;
   transition: opacity 0.18s ease;
 }
@@ -466,10 +467,77 @@ body > main[hidden] {
   padding: 14px 40px 72px;
 }
 
-#heading {
+#shelf-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
   margin: 0 0 24px;
+}
+
+#heading {
+  min-width: 0;
+  margin: 0;
   font: var(--title-weight) var(--h1-size) / 1.1 var(--font-title);
   letter-spacing: -0.015em;
+}
+
+/* Beside Home's heading: how long you have read this week, and before it a bar for each of
+   the week's days, as tall as that day's share of the longest. A day with nothing read is a
+   dot on the line; a day still to come is fainter. */
+.week {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: 14px;
+  padding-bottom: 5px; /* its words onto the heading's own line of type */
+}
+
+.week-bars {
+  display: flex;
+  align-items: flex-end;
+  height: 28px;
+  margin-bottom: 2px; /* and its bars standing on that line */
+}
+
+.week-bars span {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 11px;
+  height: 100%;
+}
+
+.week-bars i {
+  width: 5px;
+  height: 2px;
+  border-radius: 1.5px;
+  background: var(--soft);
+}
+
+.week-bars .none i {
+  background: var(--muted);
+}
+
+.week-bars .ahead i {
+  background: var(--line);
+}
+
+.week-words {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.25;
+}
+
+.week-name {
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 2px);
+}
+
+.week-time {
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 .cards {
@@ -1515,6 +1583,17 @@ body > main[hidden] {
   margin: 0;
 }
 
+/* Two buttons side by side, where a row has two things to do. */
+.set-buttons {
+  display: flex;
+  flex: none;
+  gap: 8px;
+}
+
+.set-button:disabled {
+  color: var(--muted);
+}
+
 .set-button {
   flex: none;
   height: 30px;
@@ -1579,7 +1658,6 @@ body > main[hidden] {
 
 .set-foot .star {
   display: inline-block;
-  position: relative;
   top: -0.12em;
   margin-left: 0.04em;
   font-size: 0.62em;
@@ -1593,11 +1671,13 @@ body > main[hidden] {
   font-variation-settings: normal;
   letter-spacing: 0;
 }
+  background: var(--hover);
 
 /* The text panel: a menu's surface, holding rows of choices in place of a list. Each row is
    a name over a strip of buttons; of three, the one in force is filled, as in a menu. */
 .panel {
   width: 232px;
+  background: var(--ink);
   padding: 9px 10px 10px;
 }
 
@@ -1615,6 +1695,7 @@ body > main[hidden] {
 }
 
 .seg {
+  position: relative;
   display: flex;
   gap: 2px;
   padding: 2px;
@@ -1671,13 +1752,11 @@ body > main[hidden] {
 }
 
 .seg button:hover:not(:disabled) {
-  background: var(--hover);
   color: var(--ink);
 }
 
 .seg button[aria-pressed='true'],
 .seg button[aria-pressed='true']:hover {
-  background: var(--ink);
   color: var(--paper);
 }
 
@@ -2176,11 +2255,11 @@ body[data-screen='reading'] #top {
 }
 
 /* What is highlighted is washed with its colour: one of five of the collections' colours. */
-#page ::highlight(light-0) { background-color: color-mix(in srgb, var(--hue-0) var(--wash), transparent); }
-#page ::highlight(light-1) { background-color: color-mix(in srgb, var(--hue-1) var(--wash), transparent); }
-#page ::highlight(light-2) { background-color: color-mix(in srgb, var(--hue-2) var(--wash), transparent); }
-#page ::highlight(light-3) { background-color: color-mix(in srgb, var(--hue-3) var(--wash), transparent); }
-#page ::highlight(light-5) { background-color: color-mix(in srgb, var(--hue-5) var(--wash), transparent); }
+#page ::highlight(light-0) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-0)) var(--wash), transparent); }
+#page ::highlight(light-1) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-1)) var(--wash), transparent); }
+#page ::highlight(light-2) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-2)) var(--wash), transparent); }
+#page ::highlight(light-3) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-3)) var(--wash), transparent); }
+#page ::highlight(light-5) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-5)) var(--wash), transparent); }
 
 /* A note on a highlight, in the margin beside it (app.js places it): small, in the app's own
    type, and on the left set against the text. Being written, it is in the ink. */

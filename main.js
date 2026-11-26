@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, nativeTheme, screen, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, nativeTheme, screen, shell } = require('electron');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -104,11 +104,9 @@ ipcMain.on('watch-pointer', (event, on) => {
 
 // The Settings page: what it shows of the app (its version, whether it is light or dark, and
 // where the library is, with the home folder written ~), and what it changes.
-ipcMain.handle('settings:load', () => {
-  const folder = library.folder();
-  const home = os.homedir();
-  return { version: app.getVersion(), appearance: nativeTheme.themeSource, folder: folder.startsWith(home + path.sep) ? '~' + folder.slice(home.length) : folder };
-});
+/** A folder as it is shown: the home folder written ~. */
+const shown = (folder) => (folder.startsWith(os.homedir() + path.sep) ? '~' + folder.slice(os.homedir().length) : folder);
+ipcMain.handle('settings:load', () => ({ version: app.getVersion(), appearance: nativeTheme.themeSource, folder: shown(library.folder()) }));
 ipcMain.on('settings:appearance', (event, look) => {
   if (!LOOKS.includes(look)) return;
   nativeTheme.themeSource = look;
@@ -118,6 +116,28 @@ ipcMain.on('settings:appearance', (event, look) => {
     // not kept: it holds for this run
   }
 });
+// The library, moved into a folder you choose (a test run off-screen is told which). Where it
+// went is kept, to be found there next time. Gives where it now is, or why it did not move.
+ipcMain.handle('settings:move', async (event, into) => {
+  const picked = headless ? into : (await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+    title: 'Move the library',
+    message: `Choose a folder to keep your library in. It moves there whole, as a folder called “${path.basename(library.folder())}”.`,
+    buttonLabel: 'Move Here',
+    properties: ['openDirectory', 'createDirectory'],
+  })).filePaths[0];
+  if (!picked) return { none: true };
+  const moved = library.move(picked);
+  if (!moved.folder) return moved;
+  // (Where a run was told where its library is, that holds for the next run too.)
+  if (!process.env.INQUISITIVE_LIBRARY) {
+    try {
+      fs.writeFileSync(KEPT, JSON.stringify({ ...kept(), library: moved.folder }, null, 2));
+    } catch {
+      return { folder: shown(moved.folder), why: 'The library was moved, but where to could not be kept. It will be looked for in Documents next time.' };
+    }
+  }
+  return { folder: shown(moved.folder) };
+});
 // The library's folder, shown in the Finder. (A test run off-screen opens nothing.)
 ipcMain.on('settings:reveal', () => {
   if (!headless) shell.openPath(library.folder());
@@ -126,6 +146,13 @@ ipcMain.on('settings:reveal', () => {
 app.whenReady().then(() => {
   const look = kept().appearance;
   if (LOOKS.includes(look)) nativeTheme.themeSource = look;
+  // The library is where it was moved to, if it was. If that folder cannot be found (a disk
+  // not plugged in, say), this run uses the usual one, and where it was moved to is kept.
+  const moved = !process.env.INQUISITIVE_LIBRARY && !headless && kept().library;
+  if (typeof moved === 'string' && moved) {
+    if (fs.existsSync(moved)) library.place(moved);
+    else dialog.showMessageBoxSync({ type: 'warning', message: 'Your library cannot be found.', detail: `It was last kept at ${shown(moved)}. Until that folder is back, Inquisitive uses ${shown(library.usual())}.` });
+  }
   // Run from source, the Dock would show Electron's own icon; this gives it the app's.
   if (process.platform === 'darwin' && !app.isPackaged) app.dock.setIcon(path.join(__dirname, 'assets', 'icon.png'));
   library.listen();

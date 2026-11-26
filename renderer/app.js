@@ -58,6 +58,8 @@ const sortOf = (id) => SORTS.flatMap(([, orders]) => orders).find(([key]) => key
 const RECENT = 4; // how many of the latest additions Home shows
 const MORE = 3; // how many started items Home shows after the one to carry on with
 const STALE = 30; // days unopened after which a started item leaves Home (it stays in Library)
+const NEAR = 0.8; // how far through a thing is close to finishing
+const CLOSE = 4; // how many of those Home shows
 
 // The tabs on the rail (their buttons are in index.html). Home is a page of its own: what to
 // carry on with, and what is new. Library, Finished and Collections are ways of looking at
@@ -100,7 +102,7 @@ function save(now) {
   if (SAMPLING) return;
   clearTimeout(keeping);
   const write = () => {
-    const state = JSON.stringify({ items, collections });
+    const state = JSON.stringify({ items, collections, read: spent });
     if (state === kept) return;
     kept = state;
     window.api.library.save(JSON.parse(state));
@@ -109,6 +111,83 @@ function save(now) {
   else keeping = setTimeout(write, 400);
 }
 window.addEventListener('beforeunload', () => save(true));
+
+// ---------- how long you read ----------
+// Kept by the day, in seconds: { '2026-11-26': 1840 }, in the library's own file (as `read`). The clock
+// runs while something is open in the reader, the window is in front, and there has been
+// some sign of you (a scroll, a key, the pointer) in the last few minutes.
+const TICK = 15; // seconds between one count and the next
+const IDLE = 180; // seconds without a sign of you after which the clock stops
+const dayOf = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+/** A day so many days back from today. */
+const daysBack = (n) => {
+  const date = new Date();
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - n);
+  return date;
+};
+// (With the stand-ins: a week of made-up reading, so that Home has something to show.)
+let spent = SAMPLING ? Object.fromEntries([12, 20, 41, 88, 0, 62, 35].map((minutes, n) => [dayOf(daysBack(n)), minutes * 60]).filter(([, seconds]) => seconds)) : {};
+let stirred = 0; // when you last did anything
+for (const sign of ['keydown', 'mousedown', 'mousemove', 'wheel', 'scroll']) window.addEventListener(sign, () => (stirred = Date.now()), { passive: true, capture: true });
+const attending = () => Boolean(open) && !document.hidden && document.hasFocus() && Date.now() - stirred < IDLE * 1000;
+/** Adds to today's reading. */
+function count(seconds) {
+  const day = dayOf(new Date());
+  spent[day] = (spent[day] ?? 0) + seconds;
+  save();
+}
+setInterval(() => attending() && count(TICK), TICK * 1000);
+
+/** A length of time, in hours and minutes: "42 min", "3 h 12 min". */
+function span(seconds) {
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  const hours = Math.floor(minutes / 60);
+  return hours ? (minutes % 60 ? `${hours} h ${minutes % 60} min` : `${hours} h`) : `${minutes} min`;
+}
+
+/** The seven days of this week, each with how long was read on it. (A week begins on the day
+    it does where you are: Monday in most places, Sunday in some.) */
+function week() {
+  let first = 1; // 1 is Monday, 7 Sunday
+  try {
+    const locale = new Intl.Locale(navigator.language);
+    first = (locale.getWeekInfo?.() ?? locale.weekInfo)?.firstDay ?? 1;
+  } catch {
+    // not somewhere that says: Monday
+  }
+  const gone = (new Date().getDay() - (first % 7) + 7) % 7; // days of this week before today
+  return Array.from({ length: 7 }, (_, n) => {
+    const date = daysBack(gone - n);
+    return { date, seconds: spent[dayOf(date)] ?? 0, ahead: n > gone };
+  });
+}
+
+/** Beside Home's heading: how long you have read this week, and a bar for each of its days.
+    Nothing, in a week with no reading in it yet. */
+function weekly() {
+  const days = week();
+  const all = days.reduce((sum, day) => sum + day.seconds, 0);
+  if (!all) return null;
+  const most = Math.max(...days.map((day) => day.seconds));
+  const made = el('div', 'week');
+  const bars = el('div', 'week-bars');
+  for (const day of days) {
+    const column = el('span', day.ahead ? 'ahead' : day.seconds ? '' : 'none');
+    const bar = el('i');
+    if (day.seconds) bar.style.height = Math.max(3, Math.round((day.seconds / most) * 28)) + 'px';
+    column.append(bar);
+    if (!day.ahead) column.dataset.tip = `${day.date.toLocaleDateString(undefined, { weekday: 'long' })}: ${day.seconds ? span(day.seconds) : 'nothing read'}`;
+    bars.append(column);
+  }
+  const words = el('div', 'week-words');
+  words.append(el('span', 'week-name', 'This week'), el('span', 'week-time', span(all)));
+  made.append(bars, words);
+  return made;
+}
+
+/** What Home says in place of its name: the time of day. */
+const greeting = (hour = new Date().getHours()) => (hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening');
 
 // What an empty library shows in place of items: a line worth reading.
 const QUOTE = { text: 'The only true wisdom is in knowing you know nothing.', by: 'Socrates' };
@@ -415,19 +494,32 @@ function band(name, body, count) {
 
 /** What to carry on with: the started item you had open last, writ large, then a row of the
     next few. One left unopened for a month drops out, though the count is of all you have
-    started. Gives the section, and the items shown in it. */
+    started. After it, what is close to finishing: whatever else you are most of the way
+    through, the furthest first, however long ago it was opened. (The one you had open last
+    leads Continue however far through it is.) Gives the sections, and the items shown in them. */
 function going() {
   const started = items.filter((item) => item.progress > 0 && item.progress < 1).sort((a, b) => when(b.opened) - when(a.opened));
-  const [lead, ...rest] = started.filter((item) => daysSince(when(item.opened)) <= STALE);
-  if (!lead) return { bands: [], under: [] };
-  const more = rest.slice(0, MORE);
-  const made = el('div', 'going');
-  made.append(card(lead, true));
-  if (more.length) made.append(grid(more, 'short row'));
-  return { bands: [band('Continue', made, started.length)], under: [lead, ...more] };
+  const [lead] = started.filter((item) => daysSince(when(item.opened)) <= STALE);
+  const near = started.filter((item) => item !== lead && item.progress >= NEAR).sort((a, b) => b.progress - a.progress);
+  const rest = started.filter((item) => item !== lead && !near.includes(item));
+  const bands = [];
+  const under = [];
+  if (lead) {
+    const more = rest.filter((item) => daysSince(when(item.opened)) <= STALE).slice(0, MORE);
+    const made = el('div', 'going');
+    made.append(card(lead, true));
+    if (more.length) made.append(grid(more, 'short row'));
+    bands.push(band('Continue', made, rest.length + 1));
+    under.push(lead, ...more);
+  }
+  if (near.length) {
+    bands.push(band('Close to finishing', grid(near.slice(0, CLOSE), 'short'), near.length));
+    under.push(...near.slice(0, CLOSE));
+  }
+  return { bands, under };
 }
 
-/** Home: what to carry on with, then the latest additions. */
+/** Home: what to carry on with, what is close to finishing, then the latest additions. */
 /** What Home and Library show while the library has nothing in it: a quotation, set large
     under its mark, then what to do and the button that does it. */
 function begin() {
@@ -444,7 +536,7 @@ function begin() {
 function home() {
   if (!items.length) return [begin()];
   const { bands, under } = going();
-  // What is already under Continue is not shown a second time.
+  // What is already under Continue or Close to finishing is not shown a second time.
   const recent = items.filter((item) => !under.includes(item)).sort((a, b) => b.added - a.added).slice(0, RECENT);
   return [...bands, ...(recent.length ? [band('Recently added', grid(recent))] : [])];
 }
@@ -1056,7 +1148,10 @@ async function addArticle(address) {
     is also where the library is kept. */
 function drawShelf() {
   save();
-  $('heading').textContent = tab.name;
+  // Home greets you in place of its name, with the week's reading beside the greeting.
+  $('heading').textContent = tab.home ? greeting() : tab.name;
+  const beside = tab.home && items.length ? weekly() : null;
+  $('heading-side').replaceChildren(...(beside ? [beside] : []));
   if (tab.home) return $('shelf-body').replaceChildren(...home());
   if (tab.shelves) return $('shelf-body').replaceChildren(...shelves());
   if (tab.settings) return $('shelf-body').replaceChildren(settings());
@@ -1476,11 +1571,11 @@ async function noteOf(link, section) {
   let note = root.querySelector('#' + CSS.escape('b-' + link.dataset.place));
   while (note && !BLOCKS.has(note.localName)) note = note.parentElement; // (a name on a word or two: the note is the paragraph they are in)
   if (!note || note === root || note.contains(link)) return null;
+  const copy = lift(note);
   // A way back leads to the link, or to somewhere in the same paragraph as it.
   const path = mine.sections[home].path;
-  const ways = [...note.querySelectorAll('a')].map((way) => way.dataset.to === path && Boolean(way.dataset.place) && block.contains(named(home, way.dataset.place)));
+  const ways = [...copy.querySelectorAll('a')].map((way) => way.dataset.to === path && Boolean(way.dataset.place) && block.contains(named(home, way.dataset.place)));
   if (link.dataset.bNote === undefined && !ways.includes(true)) return null;
-  const copy = note.cloneNode(true);
   let number = '';
   [...copy.querySelectorAll('a')].forEach((way, index) => {
     if (!ways[index]) return;
@@ -1510,6 +1605,36 @@ async function noteOf(link, section) {
   const letters = copy.textContent.replace(/\s+/g, '').length;
   if (letters > MOST_NOTE || (letters <= number.length && !copy.querySelector('img, svg, math'))) return null;
   return copy;
+}
+
+/** A copy of a note, as one block of its own. Mostly that is the block as it stands. But
+    where a book sets its notes out in a table, the note is the whole of the row its name is
+    in, number and words; and in a list of terms, it is the term and what is said of it. */
+function lift(note) {
+  /** What a cell or a term holds, out of it. */
+  const held = (from) => {
+    const made = el(from.querySelector(BLOCK) ? 'div' : 'span');
+    made.append(...from.cloneNode(true).childNodes);
+    return made;
+  };
+  const together = (parts) => {
+    const made = el('div');
+    parts.forEach((part, index) => made.append(...(index ? [' '] : []), held(part)));
+    // (A number that leads nowhere is the note's number all the same.)
+    const first = made.firstElementChild;
+    if (!first.querySelector('a') && NUMBER.test(first.textContent.trim())) first.className = 'notepop-number';
+    return made;
+  };
+  const row = note.localName === 'tr' ? note : note.localName === 'td' || note.localName === 'th' ? note.closest('tr') : null;
+  if (row) return together([...row.cells]);
+  // A term, with what follows it up to the next term; or what is said, with its term.
+  const term = note.localName === 'dt' ? note : note.localName === 'dd' && note.previousElementSibling?.localName === 'dt' ? note.previousElementSibling : null;
+  if (term) {
+    const parts = [term];
+    for (let next = term.nextElementSibling; next?.localName === 'dd'; next = next.nextElementSibling) parts.push(next);
+    return together(parts);
+  }
+  return note.cloneNode(true);
 }
 
 /** Puts a note up at the link to it: under the link's line, centred on it; over the line if
@@ -2301,18 +2426,27 @@ function lightPart(index) {
   if (!nodes.length) return;
   for (const light of book.lights) {
     if (light.section !== index) continue;
-    let { start, end } = light;
-    if (text.slice(start, end) !== light.text) {
-      // Its words are not where they were (the section is read a little differently now,
-      // say): they are taken to be where they next appear, nearest to there.
-      let near = -1;
-      for (let at = text.indexOf(light.text); at >= 0; at = text.indexOf(light.text, at + 1)) if (near < 0 || Math.abs(at - start) < Math.abs(near - start)) near = at;
-      if (near < 0) continue;
-      start = near;
-      end = near + light.text.length;
-    }
-    lit.set(light.id, rangeOf(nodes, start, end));
+    const at = spanOf(light, text);
+    if (at) lit.set(light.id, rangeOf(nodes, at[0], at[1]));
   }
+}
+
+/** Where a highlight's words are in its section's text: where it says they start and end;
+    or, if they are not there now (the section is read a little differently, say), where
+    they next appear, nearest to there. Nothing, if they are nowhere in it. */
+function spanOf(light, text) {
+  if (text.slice(light.start, light.end) === light.text) return [light.start, light.end];
+  let near = -1;
+  for (let at = text.indexOf(light.text); at >= 0; at = text.indexOf(light.text, at + 1)) if (near < 0 || Math.abs(at - light.start) < Math.abs(near - light.start)) near = at;
+  return near < 0 ? null : [near, near + light.text.length];
+}
+
+/** The highlights of a section that a stretch of it runs into, each with where it is. */
+function meeting(place) {
+  const root = book.fetched.has(place.section) && rootOf(place.section);
+  if (!root) return [];
+  const { text } = linesOf(root);
+  return book.lights.filter((light) => light.section === place.section).map((light) => ({ light, at: spanOf(light, text) })).filter(({ at }) => at && at[0] < place.end && at[1] > place.start);
 }
 
 /** Shows the highlights: each colour's together. */
@@ -2365,12 +2499,24 @@ function chosen() {
   return start < end ? { section: index, start, end, text: words.text.slice(start, end) } : null;
 }
 
-/** Highlights a place in a colour. */
+/** Highlights a place in a colour. Highlights it runs into are taken into it: what is made
+    is one highlight, from where the first of them starts to where the last ends, in this
+    colour, with whatever notes they had (one after another). */
 function addLight(place, hue) {
-  const light = { id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ...place, hue, note: '', made: Date.now() };
+  const met = meeting(place).sort((a, b) => a.at[0] - b.at[0]);
+  const start = Math.min(place.start, ...met.map(({ at }) => at[0]));
+  const end = Math.max(place.end, ...met.map(({ at }) => at[1]));
+  const text = met.length ? linesOf(rootOf(place.section)).text.slice(start, end) : place.text;
+  for (const { light } of met) {
+    if (light === writing) wrote();
+    book.lights.splice(book.lights.indexOf(light), 1);
+    lit.delete(light.id);
+  }
+  const light = { id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), section: place.section, start, end, text, hue, note: met.map(({ light }) => light.note).filter(Boolean).join('\n\n'), made: Date.now() };
   book.lights.push(light);
   lightPart(light.section);
   paintLights();
+  layNotes();
   keepLights();
   return light;
 }
@@ -2434,9 +2580,8 @@ function openPicker(range, place, light) {
   const last = () => LIGHTS.find((hue) => String(hue) === localStorage.getItem('hue')) ?? LIGHTS[0];
   /** The highlight this is for: made now, in the colour last used, if it is yet to be. */
   const made = () => {
-    if (light) return light;
     getSelection().removeAllRanges();
-    return addLight(place, last());
+    return light ?? addLight(place, last());
   };
   for (const hue of LIGHTS) {
     const swatch = el('button', 'swatch');
@@ -2457,7 +2602,7 @@ function openPicker(range, place, light) {
     node.append(swatch);
   }
   node.append(el('span', 'picker-line'), tool('pen', light?.note ? 'Edit note' : 'Add a note', () => writeNote(made())));
-  if (light) node.append(tool('bin', 'Remove highlight', () => removeLight(light)));
+  if (light) node.append(tool('bin', 'Remove highlight', () => (getSelection().removeAllRanges(), removeLight(light))));
   node.addEventListener('mousedown', (e) => e.preventDefault()); // a press on it leaves what is selected as it is
   document.body.append(node);
   // Over the first line of the stretch, their left edges together; under its last line if
@@ -2485,7 +2630,12 @@ document.addEventListener('mouseup', (e) => {
   setTimeout(() => {
     if (!book || picker) return;
     const place = chosen();
-    if (place) return openPicker(rangeOf(linesOf(rootOf(place.section)).nodes, place.start, place.end), place);
+    if (place) {
+      // What is selected wholly inside a highlight is that highlight's to change: the row is
+      // its own, as when it is clicked. (The shortest, where one lies inside another.)
+      const inside = meeting(place).filter(({ at }) => at[0] <= place.start && at[1] >= place.end).sort((a, b) => a.at[1] - a.at[0] - (b.at[1] - b.at[0]))[0];
+      return openPicker(rangeOf(linesOf(rootOf(place.section)).nodes, place.start, place.end), inside ? null : place, inside?.light);
+    }
     const light = !link && lightAt(x, y);
     if (light) openPicker(lit.get(light.id), null, light);
   });
@@ -2976,7 +3126,11 @@ function settings() {
       syncs.push(() => (shown.textContent = value()));
     }
     made.append(title);
-    if (more) made.append(el('div', 'set-more', more));
+    if (more) {
+      const said = el('div', 'set-more', typeof more === 'function' ? '' : more);
+      if (typeof more === 'function') syncs.push(() => (said.textContent = more())); // (what it says can change)
+      made.append(said);
+    }
     made.append(control);
     return made;
   };
@@ -3018,6 +3172,23 @@ function settings() {
   const reveal = el('button', 'set-button', 'Show in Finder');
   reveal.type = 'button';
   reveal.addEventListener('click', () => window.api.settings.reveal());
+  // Moving the library: you choose a folder, and the whole of it goes there.
+  const mover = el('button', 'set-button', 'Move…');
+  mover.type = 'button';
+  mover.addEventListener('click', async () => {
+    if (SAMPLING) return void window.api.library.notify('There is no library to move while the stand-ins are showing.');
+    save(true); // what is not yet written goes with it
+    mover.disabled = reveal.disabled = true;
+    mover.textContent = 'Moving…';
+    const moved = await window.api.settings.move();
+    mover.disabled = reveal.disabled = false;
+    mover.textContent = 'Move…';
+    if (moved.folder && about) about.folder = moved.folder;
+    sync();
+    if (moved.why) window.api.library.notify(moved.why);
+  });
+  const places = el('div', 'set-buttons');
+  places.append(reveal, mover);
 
   // A few lines set as what you read is set, in the theme you read in.
   const sample = el('div', 'set-sample');
@@ -3069,7 +3240,7 @@ function settings() {
       '',
       null,
       row('Appearance', look, { more: 'For the library. What you read has its own theme.' }),
-      row('Location', reveal, { more: about?.folder ?? '' }),
+      row('Location', places, { more: () => about?.folder ?? '' }),
     ),
     part(
       'Text',
@@ -3153,7 +3324,8 @@ document.addEventListener('click', (e) => {
   if (library) {
     items = library.items;
     collections.push(...library.collections);
-    kept = JSON.stringify({ items, collections });
+    spent = library.read ?? {};
+    kept = JSON.stringify({ items, collections, read: spent });
   }
   drawRail();
   drawShelf();

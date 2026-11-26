@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld('api', {
     appearance: (look) => ipcRenderer.send('settings:appearance', String(look)),
     /** Show the library's folder in the Finder. */
     reveal: () => ipcRenderer.send('settings:reveal'),
+    /** Move the library into a folder you are asked to choose: gives { folder } (where it now is), { why } (why it did not move) or { none } (nothing chosen). */
+    move: (into) => ipcRenderer.invoke('settings:move', into),
   },
 
   // The library (library.js): what is kept, and the books themselves.

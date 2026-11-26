@@ -17,7 +17,13 @@ const zlib = require('node:zlib');
 
 const headless = Boolean(process.env.INQUISITIVE_HEADLESS);
 
-const folder = () => process.env.INQUISITIVE_LIBRARY || (headless ? path.join(app.getPath('temp'), 'inquisitive-test', 'Library') : path.join(app.getPath('documents'), 'Inquisitive'));
+// Where the library is kept: in Documents, unless it has been moved (main.js keeps where
+// to, and says at the start; a move in this run says so itself).
+let placed = null;
+const usual = () => path.join(app.getPath('documents'), 'Inquisitive');
+const folder = () => placed || process.env.INQUISITIVE_LIBRARY || (headless ? path.join(app.getPath('temp'), 'inquisitive-test', 'Library') : usual());
+/** Says where the library was moved to in an earlier run. */
+const place = (where) => (placed = where ? path.resolve(String(where)) : null);
 const record = () => path.join(folder(), 'library.json');
 
 /** The full path of a file in the library, given its path within it. Nothing outside the
@@ -38,15 +44,27 @@ function load() {
   try {
     text = fs.readFileSync(record(), 'utf8');
   } catch {
-    return { items: [], collections: [] };
+    return { items: [], collections: [], read: {} };
   }
   try {
     const kept = JSON.parse(text);
-    return { items: Array.isArray(kept.items) ? kept.items : [], collections: Array.isArray(kept.collections) ? kept.collections : [] };
+    return { items: Array.isArray(kept.items) ? kept.items : [], collections: Array.isArray(kept.collections) ? kept.collections : [], read: days(kept.read) };
   } catch {
     fs.renameSync(record(), path.join(folder(), `library.unreadable-${Date.now()}.json`));
-    return { items: [], collections: [] };
+    return { items: [], collections: [], read: {} };
   }
+}
+
+/** How long was read on each day, in seconds: { '2026-11-26': 1840 }. Only what is a day and
+    a length of time is kept. */
+function days(read) {
+  const kept = {};
+  if (read && typeof read === 'object') {
+    for (const [day, seconds] of Object.entries(read)) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(day) && Number.isFinite(seconds) && seconds > 0) kept[day] = Math.round(seconds);
+    }
+  }
+  return kept;
 }
 
 /** Writes the library file: to one side first, then into place, so a crash midway cannot
@@ -55,8 +73,59 @@ function save(state) {
   if (!state || !Array.isArray(state.items) || !Array.isArray(state.collections)) return;
   fs.mkdirSync(folder(), { recursive: true });
   const aside = record() + '.writing';
-  fs.writeFileSync(aside, JSON.stringify({ version: 1, items: state.items, collections: state.collections }, null, 2));
+  fs.writeFileSync(aside, JSON.stringify({ version: 1, items: state.items, collections: state.collections, read: days(state.read) }, null, 2));
   fs.renameSync(aside, record());
+}
+
+// ---------- moving the library ----------
+
+/** Every file under a folder, by its path within it, with its size. */
+function filesOf(root, under = '') {
+  const found = [];
+  for (const entry of fs.readdirSync(path.join(root, under), { withFileTypes: true })) {
+    const name = path.join(under, entry.name);
+    if (entry.isDirectory()) found.push(...filesOf(root, name));
+    else if (entry.name !== '.DS_Store') found.push(name + ' ' + fs.statSync(path.join(root, name)).size);
+  }
+  return found.sort();
+}
+
+/** Moves the library into another folder: the whole of it, as a folder of the same name
+    there. On the same disk it is simply moved. On another, it is copied across, the copy is
+    checked against it file by file, and only then is it taken away from where it was; if
+    anything goes wrong it stays where it is. Gives where it now is, or why it was not moved. */
+function move(into) {
+  const from = path.resolve(folder());
+  const parent = path.resolve(String(into));
+  const to = path.join(parent, path.basename(from));
+  if (to === from || parent === from) return { why: 'The library is already there.' };
+  if ((parent + path.sep).startsWith(from + path.sep)) return { why: 'The library cannot be moved into itself.' };
+  try {
+    if (!fs.statSync(parent).isDirectory()) return { why: 'That is not a folder.' };
+    const there = fs.existsSync(to) ? fs.readdirSync(to).filter((name) => name !== '.DS_Store') : null;
+    if (there?.length) return { why: `There is already a folder called “${path.basename(to)}” there, with things in it.` };
+    if (there) fs.rmSync(to, { recursive: true }); // (an empty one: it gives way)
+    if (!fs.existsSync(from)) fs.mkdirSync(to, { recursive: true }); // nothing kept yet: there is only somewhere to choose
+    else {
+      try {
+        fs.renameSync(from, to);
+      } catch (error) {
+        if (error.code !== 'EXDEV') throw error;
+        try {
+          fs.cpSync(from, to, { recursive: true, preserveTimestamps: true });
+          if (filesOf(from).join('\n') !== filesOf(to).join('\n')) throw new Error('the copy is not the same');
+        } catch (failed) {
+          fs.rmSync(to, { recursive: true, force: true });
+          throw failed;
+        }
+        fs.rmSync(from, { recursive: true, force: true });
+      }
+    }
+  } catch (error) {
+    return { why: `The library could not be moved there, and is where it was. (${error.message})` };
+  }
+  placed = to;
+  return { folder: to };
 }
 
 // ---------- highlights ----------
@@ -342,4 +411,4 @@ function listen() {
   });
 }
 
-module.exports = { listen, folder };
+module.exports = { listen, folder, place, usual, move };
