@@ -1,4 +1,4 @@
-const { app, BrowserWindow, nativeTheme } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeTheme, screen } = require('electron');
 const path = require('node:path');
 
 // A test run can keep its window off the screen (INQUISITIVE_HEADLESS=1), so it does not get
@@ -9,6 +9,9 @@ if (headless) app.setPath('userData', path.join(app.getPath('temp'), 'inquisitiv
 
 let win = null;
 
+// Where the window buttons sit: in the top bar, as far from its top as from the window's left.
+const LIGHTS = { x: 16, y: 15 };
+
 function createWindow() {
   win = new BrowserWindow({
     show: !headless,
@@ -18,7 +21,7 @@ function createWindow() {
     minHeight: 400,
     // The window draws its own top bar, beside the window buttons.
     titleBarStyle: 'hidden',
-    trafficLightPosition: { x: 16, y: 15 },
+    trafficLightPosition: LIGHTS,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#181613' : '#f5f1e8', // --paper in style.css
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -34,6 +37,45 @@ function createWindow() {
     win = null;
   });
 }
+
+// While something is being read the top bar keeps out of sight, and the window buttons go
+// with it; the window says when they should be there.
+ipcMain.on('window-buttons', (event, show) => {
+  const asked = BrowserWindow.fromWebContents(event.sender);
+  if (process.platform !== 'darwin' || !asked) return;
+  asked.setWindowButtonVisibility(Boolean(show));
+  // Shown again, the buttons come back where macOS would put them, not where they were: put
+  // them back.
+  if (show) asked.setWindowButtonPosition(LIGHTS);
+});
+
+// The bar comes back when the pointer goes up to it, and how far you have read shows when the
+// pointer goes down to the foot. The page cannot see the pointer over the part of a window
+// you drag by, which is where the bar is, so the pointer is watched from here: while the
+// window asks, it is told each time the pointer enters or leaves the top or the foot.
+const BAND = 44; // how deep the top and the foot are: the top bar's height
+let watching = null;
+
+ipcMain.on('watch-pointer', (event, on) => {
+  clearInterval(watching);
+  watching = null;
+  const asked = BrowserWindow.fromWebContents(event.sender);
+  if (!on || !asked) return;
+  let zone = 'none';
+  watching = setInterval(() => {
+    if (asked.isDestroyed()) return clearInterval(watching);
+    const at = screen.getCursorScreenPoint();
+    const bounds = asked.getContentBounds();
+    const y = at.y - bounds.y;
+    const inside = asked.isFocused() && at.x >= bounds.x && at.x < bounds.x + bounds.width && y >= 0 && y < bounds.height;
+    // Once at the top the pointer has to come well clear of it to count as gone, so the bar
+    // does not flicker at its lower edge.
+    const now = !inside ? 'none' : y < (zone === 'top' ? BAND + 20 : BAND) ? 'top' : y >= bounds.height - BAND ? 'foot' : 'none';
+    if (now === zone) return;
+    zone = now;
+    event.sender.send('pointer', zone);
+  }, 60);
+});
 
 app.whenReady().then(() => {
   createWindow();

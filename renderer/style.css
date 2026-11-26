@@ -30,6 +30,11 @@
   --card-pad: 16px;
   --card-line: 14%; /* how strong a card's outline is */
   --card-lift: 3px; /* how far a card rises when pointed at */
+  --font-serif: 'Literata Variable', 'New York', ui-serif, Georgia, serif; /* the reader's other face */
+  --read-font: var(--font); /* the face of what is being read: --font or --font-serif */
+  --read-size: 17px; /* and its size */
+  --read-leading: 1.7; /* its line height */
+  --read-width: 620px; /* the widest its column gets */
 
   color-scheme: light;
 }
@@ -45,6 +50,47 @@
     --danger: #e8907c;
     color-scheme: dark;
   }
+}
+
+/* The reader's themes: each its own paper and ink, whatever the app is wearing. While
+   something is being read the window wears the one chosen (app.js marks the root); the dots
+   that choose between them wear theirs always. Light and Dark are the app's own. */
+[data-theme='white'] { --paper: #ffffff; --ink: #1c1b1a; }
+[data-theme='light'] { --paper: #f5f1e8; --ink: #2a2622; }
+[data-theme='sepia'] { --paper: #eadfc8; --ink: #3a2f22; }
+[data-theme='dusk'] { --paper: #3b3936; --ink: #c2bcb0; }
+[data-theme='dark'] { --paper: #181613; --ink: #ece6da; }
+[data-theme='black'] { --paper: #000000; --ink: #cfc9bd; }
+
+/* While one theme gives way to another, everything changes colour together and at the same
+   pace (app.js marks the root for as long as it takes). */
+:root.theming *,
+:root.theming *::before,
+:root.theming *::after {
+  transition: background-color var(--slide), color var(--slide), border-color var(--slide), outline-color var(--slide), box-shadow var(--slide) !important;
+}
+
+/* What goes with a light paper, and with a dark one: as in the app's two. */
+[data-theme='white'],
+[data-theme='light'],
+[data-theme='sepia'] {
+  --tint: 16%;
+  --raised: color-mix(in srgb, #fff 55%, var(--paper));
+  --shadow: 0 10px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06);
+  --shadow-small: 0 4px 14px rgba(0, 0, 0, 0.1);
+  --danger: #b8442f;
+  color-scheme: light;
+}
+
+[data-theme='dusk'],
+[data-theme='dark'],
+[data-theme='black'] {
+  --tint: 12%;
+  --raised: color-mix(in srgb, var(--ink) 7%, var(--paper));
+  --shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-small: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --danger: #e8907c;
+  color-scheme: dark;
 }
 
 * {
@@ -69,6 +115,7 @@ body {
   grid-template-rows: 44px minmax(0, 1fr);
   background: var(--paper);
   color: var(--ink);
+  transition: background-color var(--slide); /* the reader's paper comes in as the rail goes */
   font: 400 var(--text-size) / 1.4 var(--font);
   letter-spacing: -0.01em;
   cursor: default;
@@ -124,7 +171,8 @@ button:not(:disabled) {
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 
-.tool:hover {
+.tool:hover,
+#reading-tools .tool[aria-expanded='true'] {
   background: var(--hover);
   color: var(--ink);
 }
@@ -134,9 +182,25 @@ button:not(:disabled) {
 [data-tool='add'] .icon { mask-image: url(icons/add-circle-linear.svg); }
 [data-tool='search'] .icon { mask-image: url(icons/magnifier-linear.svg); }
 [data-tool='contents'] .icon { mask-image: url(icons/list-linear.svg); }
+[data-tool='text'] .icon { mask-image: url(icons/text-square-linear.svg); }
 
 body[data-screen='reading'] #rail-toggle {
   display: none;
+}
+
+/* While reading, the bar lies over the top of the page and keeps out of sight until the
+   pointer comes up to it (app.js marks the body), or the keyboard reaches one of its buttons. */
+body[data-screen='reading'] #top {
+  z-index: 2;
+  grid-row: 1;
+  background: var(--paper);
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+body[data-screen='reading'][data-bar='shown'] #top,
+body[data-screen='reading'] #top:focus-within {
+  opacity: 1;
 }
 
 #crumbs .step {
@@ -189,15 +253,22 @@ body[data-view='settings'] #library-tools {
   width: 56px;
   min-height: 0;
   padding: 6px 10px 12px;
-  transition: width var(--slide);
+  overflow: hidden;
+  transition: width var(--slide), padding var(--slide), opacity var(--slide), visibility 0s;
 }
 
 body[data-rail='wide'] #rail {
   width: 200px;
 }
 
+/* While reading, the rail slides away, and slides back when you leave. */
 body[data-screen='reading'] #rail {
-  display: none;
+  width: 0;
+  padding-right: 0;
+  padding-left: 0;
+  opacity: 0;
+  visibility: hidden;
+  transition: width var(--slide), padding var(--slide), opacity var(--slide), visibility 0s 0.22s;
 }
 
 /* A tab: its icon, and its name when the rail is wide. The icon sits in the same place
@@ -386,6 +457,17 @@ h1 {
   height: 2px;
   border-radius: 1px;
   background: linear-gradient(to right, color-mix(in srgb, var(--ink) 62%, transparent) var(--done), color-mix(in srgb, var(--ink) 13%, transparent) var(--done));
+}
+
+/* On the Finished page, in place of the line: when it was finished. */
+.card-when {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--soft);
+  font: 400 calc(var(--text-size) - 1px) / 1 var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .card-end {
@@ -632,8 +714,8 @@ h1 {
   width: 16px;
   height: 16px;
   background: var(--soft);
-  -webkit-mask: url(icons/sort-vertical-linear.svg) center / contain no-repeat;
-  mask: url(icons/sort-vertical-linear.svg) center / contain no-repeat;
+  -webkit-mask: url(icons/move-vertical-linear.svg) center / contain no-repeat;
+  mask: url(icons/move-vertical-linear.svg) center / contain no-repeat;
 }
 
 /* ---------- tips ---------- */
@@ -754,6 +836,111 @@ h1 {
 .menu-icon[data-icon='bin'] { mask-image: url(icons/trash-bin-minimalistic-bold.svg); }
 .menu-icon[data-icon='tick'] { mask-image: url(icons/check-linear.svg); }
 
+/* The text panel: a menu's surface, holding rows of choices in place of a list. Each row is
+   a name over a strip of buttons; of three, the one in force is filled, as in a menu. */
+.panel {
+  width: 232px;
+  padding: 9px 10px 10px;
+}
+
+.panel-head {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 2px 6px;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 2px);
+}
+
+.panel-value {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
+.seg {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--hover);
+}
+
+.seg:not(:last-child),
+.dots:not(:last-child) {
+  margin-bottom: 11px;
+}
+
+/* The themes: a dot of each one's paper, edged in its ink. The one worn is ringed, as a
+   collection's colour is. */
+.dots {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 4px 4px;
+}
+
+.dot {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  outline: 1.5px solid transparent;
+  outline-offset: 2px;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 26%, transparent);
+  transition: outline-color 0.12s ease;
+}
+
+/* (A dot's own ink is its theme's; currentColor is the ink of the panel it sits in.) */
+.dot:hover,
+.dot:focus-visible {
+  outline-color: color-mix(in srgb, currentColor 40%, transparent);
+}
+
+.dot[aria-pressed='true'] {
+  outline-color: currentColor;
+}
+
+.seg button {
+  flex: 1;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--soft);
+  font-size: calc(var(--text-size) - 1px);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.seg button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.seg button[aria-pressed='true'],
+.seg button[aria-pressed='true']:hover {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.seg button:disabled {
+  color: color-mix(in srgb, var(--ink) 26%, transparent);
+}
+
+.seg button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/* Smaller and larger: the same letter at two sizes. */
+.seg .seg-small {
+  font-size: 12px;
+}
+
+.seg .seg-large {
+  font-size: 18px;
+}
+
 /* A collection's colour, standing where an icon would; an empty ring for no collection. */
 .menu-dot {
   flex: none;
@@ -809,8 +996,8 @@ h1 {
   color: var(--ink);
 }
 
-/* While a shelf is being dragged: a copy of it goes with the pointer, with nothing behind
-   it, and the shelf itself stays on the page, faded, wherever letting go would put it. */
+/* While a shelf or a card is being dragged: a copy of it goes with the pointer, and the
+   thing itself stays on the page, faded, wherever letting go would put it. */
 body.dragging,
 body.dragging * {
   cursor: grabbing !important;
@@ -820,19 +1007,19 @@ body.dragging * {
   position: relative;
 }
 
-.band.held {
+.held {
   opacity: 0.32;
 }
 
-.band.ghost {
+.ghost {
   position: fixed;
   z-index: 20;
   margin: 0;
   pointer-events: none;
 }
 
-/* Let go, the copy slides onto the shelf's new place. */
-.band.ghost.settling {
+/* Let go, the copy slides onto the thing's new place. */
+.ghost.settling {
   transition: left 0.16s cubic-bezier(0.3, 0, 0.2, 1), top 0.16s cubic-bezier(0.3, 0, 0.2, 1);
 }
 
@@ -982,45 +1169,76 @@ body.dragging * {
 }
 
 /* ---------- reading ---------- */
+/* One quiet column of text, from the top of the window to the foot of it. */
 
 #reading {
-  grid-column: 1 / -1;
+  grid-row: 1 / 3;
+  grid-column: 2;
 }
 
 #page {
-  max-width: 680px;
+  max-width: calc(var(--read-width) + 80px);
   margin: 0 auto;
-  padding: 44px 40px 96px;
+  padding: 92px 40px 112px;
+  cursor: auto;
+  user-select: text;
+  animation: arrive 0.3s ease both;
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+  }
+}
+
+/* Above the heading: where in the thing this is. */
+#page .over {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
 }
 
 #page h2 {
-  margin: 0 0 6px;
-  font: var(--title-weight) 32px / 1.15 var(--font-title);
+  margin: 0;
+  font: var(--title-weight) 34px / 1.15 var(--font-title);
   letter-spacing: -0.015em;
 }
 
 #page .byline {
-  margin: 0 0 34px;
+  margin: 10px 0 0;
   color: var(--soft);
 }
 
-/* Until there is a reader, lines stand where the words will be. */
-#page .line {
-  height: 7px;
-  margin: 0 0 15px;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--ink) 11%, transparent);
-}
-
-#page .line.end {
-  margin-bottom: 34px;
-}
-
-#progress {
-  position: fixed;
-  right: 18px;
-  bottom: 14px;
-  color: var(--muted);
-  font: 400 12px/1 var(--font-mono);
+#page .text {
+  margin: 0 0 1.1em;
+  font-family: var(--read-font);
+  font-size: var(--read-size);
+  line-height: var(--read-leading);
   letter-spacing: 0;
+}
+
+#page h2 + .text,
+#page .byline + .text {
+  margin-top: 36px;
+}
+
+/* How far through you are, in the corner. Like the top bar it is out of sight until the
+   pointer goes down to the foot of the window. */
+#place {
+  position: fixed;
+  right: 10px;
+  bottom: 10px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--muted);
+  font: 400 12px / 16px var(--font-mono);
+  letter-spacing: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+
+body[data-foot='shown'] #place {
+  opacity: 1;
 }

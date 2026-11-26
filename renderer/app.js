@@ -4,14 +4,14 @@
 // when something is opened. There is no real library or reader yet, so the shelf is stocked
 // with stand-ins.
 const SAMPLE = [
-  { id: 'geb', kind: 'book', title: 'Gödel, Escher, Bach', author: 'Douglas Hofstadter', pages: 777, progress: 0.34, added: 40, opened: 0, collection: 'math' },
+  { id: 'geb', kind: 'book', title: 'Gödel, Escher, Bach', author: 'Douglas Hofstadter', pages: 777, progress: 0.34, added: 40, opened: 0, collection: 'math', chapter: [7, 20, 'The Propositional Calculus'] },
   { id: 'shannon', kind: 'pdf', title: 'A Mathematical Theory of Communication', author: 'Claude Shannon', pages: 55, progress: 0.12, added: 12, opened: 3, collection: 'math' },
-  { id: 'research', kind: 'article', title: 'You and Your Research', author: 'Richard Hamming', minutes: 45, progress: 1, added: 30, opened: 20, collection: 'science' },
-  { id: 'state', kind: 'book', title: 'Seeing Like a State', author: 'James C. Scott', pages: 445, progress: 0, added: 2, collection: 'society' },
-  { id: 'bitter', kind: 'article', title: 'The Bitter Lesson', author: 'Rich Sutton', minutes: 6, progress: 1, added: 9, opened: 9, collection: 'computing' },
-  { id: 'gene', kind: 'book', title: 'The Selfish Gene', author: 'Richard Dawkins', pages: 360, progress: 0.61, added: 25, opened: 1, collection: 'science' },
+  { id: 'research', kind: 'article', title: 'You and Your Research', author: 'Richard Hamming', minutes: 45, progress: 1, added: 30, opened: 20, finished: 20, collection: 'science' },
+  { id: 'state', kind: 'book', title: 'Seeing Like a State', author: 'James C. Scott', pages: 445, progress: 0, added: 2, collection: 'society', chapter: [1, 10, 'Nature and Space'] },
+  { id: 'bitter', kind: 'article', title: 'The Bitter Lesson', author: 'Rich Sutton', minutes: 6, progress: 1, added: 9, opened: 9, finished: 9, collection: 'computing' },
+  { id: 'gene', kind: 'book', title: 'The Selfish Gene', author: 'Richard Dawkins', pages: 360, progress: 0.61, added: 25, opened: 1, collection: 'science', chapter: [8, 13, 'Battle of the Generations'] },
   { id: 'attention', kind: 'pdf', title: 'Attention Is All You Need', author: 'Ashish Vaswani and others', pages: 15, progress: 0, added: 1, collection: 'computing' },
-  { id: 'hamming', kind: 'book', title: 'The Art of Doing Science and Engineering', author: 'Richard Hamming', pages: 376, progress: 0.08, added: 5, opened: 6 }, // in no collection
+  { id: 'hamming', kind: 'book', title: 'The Art of Doing Science and Engineering', author: 'Richard Hamming', pages: 376, progress: 0.08, added: 5, opened: 6, chapter: [3, 30, 'History of Computers: Hardware'] }, // in no collection
 ];
 
 const KINDS = { book: 'Book', pdf: 'PDF', article: 'Article' };
@@ -54,7 +54,7 @@ const STALE = 30; // days unopened after which a started item leaves Home (it st
 const TABS = [
   { id: 'home', name: 'Home', home: true },
   { id: 'library', name: 'Library', test: () => true, tools: true },
-  { id: 'finished', name: 'Finished', test: (item) => item.progress >= 1, empty: 'What you finish reading is kept here.' },
+  { id: 'finished', name: 'Finished', test: (item) => item.progress >= 1, dated: true, empty: 'What you finish reading is kept here.' },
   { id: 'collections', name: 'Collections', shelves: true },
   { id: 'settings', name: 'Settings', test: () => false }, // a screen of its own; nothing on it yet
 ];
@@ -263,24 +263,58 @@ const lengthOf = (item) => (item.pages ? item.pages + ' pages' : item.minutes ? 
 /** When an item was last open, in words. */
 const openedOf = (item) => (item.opened === 0 ? 'Opened today' : item.opened === 1 ? 'Opened yesterday' : `Opened ${item.opened} days ago`);
 
+/** When an item was finished, in words: "Finished 16 Nov", with the year if it is not this one. */
+function finishedOf(item) {
+  if (item.finished == null) return 'Finished';
+  const on = new Date(Date.now() - item.finished * 864e5);
+  const year = on.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' };
+  return 'Finished ' + on.toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...year });
+}
+
 /** A card: what kind of thing it is and how long, its title, who wrote it, and a line showing
     how far you are. Pointed at, the place gives way to an arrow: it opens. A lead card is
-    the same thing writ large, across the page. */
-function card(item, lead) {
+    the same thing writ large, across the page. A dated card says when it was finished, in
+    place of the line. */
+function card(item, lead, dated) {
   const made = el('button', lead ? 'card lead' : 'card');
   made.type = 'button';
   made.dataset.hue = hueOf(item);
   const head = el('span', 'card-head');
   head.append(el('span', '', KINDS[item.kind]), el('span', '', lengthOf(item)));
   if (lead) head.append(el('span', '', openedOf(item)));
-  const meter = el('span', 'meter');
-  meter.style.setProperty('--done', Math.round(item.progress * 100) + '%');
   const end = el('span', 'card-end');
-  end.append(el('span', 'card-place', placeOf(item)), el('span', 'card-go'));
   const foot = el('span', 'card-foot');
-  foot.append(meter, end);
+  if (dated) {
+    // On the Finished page every line would be full and every place "Finished": say when.
+    end.append(el('span', 'card-go'));
+    foot.append(el('span', 'card-when', finishedOf(item)), end);
+  } else {
+    const meter = el('span', 'meter');
+    meter.style.setProperty('--done', Math.round(item.progress * 100) + '%');
+    end.append(el('span', 'card-place', placeOf(item)), el('span', 'card-go'));
+    foot.append(meter, end);
+  }
   made.append(head, el('span', 'card-title', item.title), el('span', 'card-author', item.author), foot);
+  made.item = item; // so a card on the page can be asked what it is a card for
   made.addEventListener('click', () => read(item));
+  made.addEventListener('pointerdown', (down) => {
+    // On the Collections page a card can be dragged to another shelf. A press becomes a drag
+    // once the pointer has moved a little; until then it is still a click.
+    if (!tab.shelves || down.button !== 0) return;
+    const move = (now) => {
+      if (Math.hypot(now.clientX - down.clientX, now.clientY - down.clientY) < 6) return;
+      done();
+      dragCard(item, made, down, now);
+    };
+    const done = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', done);
+      window.removeEventListener('pointercancel', done);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', done);
+    window.addEventListener('pointercancel', done);
+  });
   made.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     openMenu(cardMenu(item), { x: e.clientX, y: e.clientY });
@@ -295,7 +329,7 @@ function cardMenu(item) {
   const done = item.progress >= 1;
   return [
     { name: 'Open', icon: 'open', run: () => read(item) },
-    done ? { name: 'Mark as unread', icon: 'restart', run: change(() => (item.progress = 0)) } : { name: 'Mark as finished', icon: 'finished', run: change(() => (item.progress = 1)) },
+    done ? { name: 'Mark as unread', icon: 'restart', run: change(() => ((item.progress = 0), delete item.finished)) } : { name: 'Mark as finished', icon: 'finished', run: change(() => ((item.progress = 1), (item.finished = 0))) },
     null,
     'Move to',
     ...collections.map((c) => ({ name: c.name, hue: c.hue, tick: item.collection === c.id, run: change(() => (item.collection = c.id)) })),
@@ -305,9 +339,9 @@ function cardMenu(item) {
   ];
 }
 
-function grid(list, className) {
+function grid(list, className, dated) {
   const made = el('div', className ? 'cards ' + className : 'cards');
-  made.append(...list.map((item) => card(item)));
+  made.append(...list.map((item) => card(item, false, dated)));
   return made;
 }
 
@@ -323,15 +357,16 @@ function band(name, body, count) {
 
 /** What to carry on with: the started item you had open last, writ large, then a row of the
     next few. One left unopened for a month drops out, though the count is of all you have
-    started. */
+    started. Gives the section, and the items shown in it. */
 function going() {
   const started = items.filter((item) => item.progress > 0 && item.progress < 1).sort((a, b) => a.opened - b.opened);
   const [lead, ...rest] = started.filter((item) => item.opened <= STALE);
-  if (!lead) return [];
+  if (!lead) return { bands: [], under: [] };
+  const more = rest.slice(0, MORE);
   const made = el('div', 'going');
   made.append(card(lead, true));
-  if (rest.length) made.append(grid(rest.slice(0, MORE), 'short row'));
-  return [band('Continue', made, started.length)];
+  if (more.length) made.append(grid(more, 'short row'));
+  return { bands: [band('Continue', made, started.length)], under: [lead, ...more] };
 }
 
 /** Home: what to carry on with, then the latest additions. */
@@ -350,8 +385,10 @@ function begin() {
 
 function home() {
   if (!items.length) return [begin()];
-  const recent = [...items].sort((a, b) => a.added - b.added).slice(0, RECENT);
-  return [...going(), band('Recently added', grid(recent))];
+  const { bands, under } = going();
+  // What is already under Continue is not shown a second time.
+  const recent = items.filter((item) => !under.includes(item)).sort((a, b) => a.added - b.added).slice(0, RECENT);
+  return [...bands, ...(recent.length ? [band('Recently added', grid(recent))] : [])];
 }
 
 // ---------- the Collections page ----------
@@ -414,30 +451,99 @@ function moveCollection(from, to) {
   collections.splice(to, 0, collections.splice(from, 1)[0]);
 }
 
-/** Drag a shelf, by its grip, to another place among the shelves. A copy of the shelf goes
-    with the pointer. The shelf itself stays on the page, faded, and steps from place to
-    place as the copy passes the others, so it always shows where letting go would put it.
-    Near the top or bottom of the page, the page moves along. Escape puts everything back. */
-function dragShelf(collection, grip, e) {
+/** Carry something across the page. A copy of it goes with the pointer; the thing itself
+    stays on the page, faded, wherever `place` puts it (`place` is asked again and again,
+    with where the pointer is). Near the top or bottom of the page, the page moves along.
+    Letting go calls `drop`, and the copy settles onto the faded thing. Escape, or the
+    pointer being taken away, puts everything back. `down` is the press that took hold of
+    it, and `now` the pointer's latest move, if it has moved since. */
+function carry(down, held, place, drop, now = down) {
   const page = $('library');
-  const held = grip.closest('.band');
-  const shelves = () => [...$('shelf-body').querySelectorAll('.band[data-id]')];
   const from = held.getBoundingClientRect();
-  const grab = { x: e.clientX - from.left, y: e.clientY - from.top }; // where on the shelf it was taken hold of
-  let at = { x: e.clientX, y: e.clientY };
-  let settling = 0; // until when the shelves are still sliding into their new places
+  const grab = { x: down.clientX - from.left, y: down.clientY - from.top }; // where on it the pointer took hold
+  let at = { x: now.clientX, y: now.clientY };
   let frame = 0;
 
-  // The copy that goes with the pointer.
   const ghost = held.cloneNode(true);
   ghost.classList.add('ghost');
   ghost.inert = true;
   ghost.style.width = from.width + 'px';
+  ghost.style.height = from.height + 'px';
   document.body.append(ghost);
   const follow = () => {
     ghost.style.left = at.x - grab.x + 'px';
     ghost.style.top = at.y - grab.y + 'px';
   };
+
+  const tick = () => {
+    const box = page.getBoundingClientRect();
+    const edge = 64; // how near an edge the pointer must be for the page to move
+    const past = at.y < box.top + edge ? at.y - (box.top + edge) : at.y > box.bottom - edge ? at.y - (box.bottom - edge) : 0;
+    if (past) page.scrollTop += past * 0.3;
+    place(at);
+    frame = requestAnimationFrame(tick);
+  };
+  const move = (ev) => {
+    at = { x: ev.clientX, y: ev.clientY };
+    follow();
+  };
+  const stop = () => {
+    cancelAnimationFrame(frame);
+    hold.removeEventListener('pointermove', move);
+    hold.removeEventListener('pointerup', release);
+    hold.removeEventListener('pointercancel', cancel);
+    window.removeEventListener('keydown', key, true);
+    document.body.classList.remove('dragging');
+    // Letting go may count as a click on whatever is under the pointer: it is not one.
+    const hush = (ev) => (ev.stopPropagation(), ev.preventDefault());
+    window.addEventListener('click', hush, true);
+    setTimeout(() => window.removeEventListener('click', hush, true), 0);
+  };
+  const release = () => {
+    stop();
+    drop();
+    // The copy settles onto the faded thing, and then the page is drawn afresh.
+    const to = held.getBoundingClientRect();
+    ghost.classList.add('settling');
+    ghost.style.left = to.left + 'px';
+    ghost.style.top = to.top + 'px';
+    setTimeout(() => {
+      ghost.remove();
+      drawShelf();
+    }, 170);
+  };
+  const cancel = () => {
+    stop();
+    ghost.remove();
+    drawShelf(); // as it was
+  };
+  const key = (ev) => {
+    if (ev.key !== 'Escape') return;
+    ev.stopPropagation();
+    cancel();
+  };
+
+  // The pointer is held by the page itself, not by what is carried: that moves about the
+  // page, and an element taken out of the page lets go of the pointer.
+  const hold = document.body;
+  hold.setPointerCapture(down.pointerId);
+  hold.addEventListener('pointermove', move);
+  hold.addEventListener('pointerup', release);
+  hold.addEventListener('pointercancel', cancel);
+  window.addEventListener('keydown', key, true);
+  document.body.classList.add('dragging');
+  held.classList.add('held');
+  follow();
+  frame = requestAnimationFrame(tick);
+}
+
+/** Drag a shelf, by its grip, to another place among the shelves. The faded shelf steps
+    from place to place as the pointer passes the others, which slide to make room, so it
+    always shows where letting go would put it. */
+function dragShelf(grip, e) {
+  const held = grip.closest('.band');
+  const shelves = () => [...$('shelf-body').querySelectorAll('.band[data-id]')];
+  let settling = 0; // until when the shelves are still sliding into their new places
 
   /** Move the faded shelf, and slide the others from where they were to where they now are. */
   const step = (move) => {
@@ -451,71 +557,48 @@ function dragShelf(collection, grip, e) {
   };
 
   /** Put the faded shelf before the first of the others that the pointer is above the middle of. */
-  const place = () => {
+  const place = (at) => {
     if (performance.now() < settling) return; // wait for the last step to finish sliding
     const others = shelves().filter((shelf) => shelf !== held);
     const next = others.find((shelf) => ((box) => at.y < box.top + box.height / 2)(shelf.getBoundingClientRect()));
     if (next ? held.nextElementSibling !== next : others.length && others.at(-1).nextElementSibling !== held) step(() => (next ? next.before(held) : others.at(-1).after(held)));
   };
 
-  const tick = () => {
-    const box = page.getBoundingClientRect();
-    const edge = 64; // how near an edge the pointer must be for the page to move
-    const past = at.y < box.top + edge ? at.y - (box.top + edge) : at.y > box.bottom - edge ? at.y - (box.bottom - edge) : 0;
-    if (past) page.scrollTop += past * 0.3;
-    place();
-    frame = requestAnimationFrame(tick);
-  };
-  const move = (ev) => {
-    at = { x: ev.clientX, y: ev.clientY };
-    follow();
-  };
-  const stop = () => {
-    cancelAnimationFrame(frame);
-    hold.removeEventListener('pointermove', move);
-    hold.removeEventListener('pointerup', drop);
-    hold.removeEventListener('pointercancel', cancel);
-    window.removeEventListener('keydown', key, true);
-    document.body.classList.remove('dragging');
-  };
+  /** The order is now the one on the page. */
   const drop = () => {
-    stop();
-    // The order is now the one on the page.
     const order = shelves().map((shelf) => shelf.dataset.id);
     collections.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
-    // The copy settles onto the faded shelf, and then the page is drawn afresh.
-    const to = held.getBoundingClientRect();
-    ghost.classList.add('settling');
-    ghost.style.left = to.left + 'px';
-    ghost.style.top = to.top + 'px';
-    setTimeout(() => {
-      ghost.remove();
-      drawShelf();
-    }, 170);
-  };
-  const cancel = () => {
-    stop();
-    ghost.remove();
-    drawShelf(); // from the order as it was
-  };
-  const key = (ev) => {
-    if (ev.key !== 'Escape') return;
-    ev.stopPropagation();
-    cancel();
   };
 
-  // The pointer is held by the page itself, not the grip: the grip moves about the page with
-  // its shelf, and an element taken out of the page lets go of the pointer.
-  const hold = document.body;
-  hold.setPointerCapture(e.pointerId);
-  hold.addEventListener('pointermove', move);
-  hold.addEventListener('pointerup', drop);
-  hold.addEventListener('pointercancel', cancel);
-  window.addEventListener('keydown', key, true);
-  document.body.classList.add('dragging');
-  held.classList.add('held');
-  follow();
-  frame = requestAnimationFrame(tick);
+  carry(e, held, place, drop);
+}
+
+/** Drag a card to another shelf, to move its item into that collection (or, onto the shelf
+    of items in no collection, out of them all). The faded card moves to whichever shelf the
+    pointer is over, into the place the page's order gives it there. */
+function dragCard(item, held, down, now) {
+  const order = sortOf(looks.collections.sort)[2];
+  const place = (at) => {
+    // The shelf the pointer is on, or under: each one's ground runs down to the next.
+    const shelves = [...$('shelf-body').querySelectorAll('.band')];
+    const over = shelves.filter((shelf) => shelf.getBoundingClientRect().top <= at.y).at(-1) ?? shelves[0];
+    const from = held.closest('.band');
+    if (!over || over === from) return;
+    let cards = over.querySelector('.cards');
+    if (!cards) over.append((cards = el('div', 'cards short')));
+    cards.insertBefore(held, [...cards.children].find((other) => order(item, other.item) < 0) ?? null);
+    // A shelf says it is empty only while it is.
+    for (const shelf of [over, from]) {
+      const none = shelf.querySelector('.band-none');
+      if (none) none.hidden = shelf.querySelectorAll('.card').length > 0;
+    }
+  };
+  const drop = () => {
+    const id = held.closest('.band').dataset.id;
+    if (id) item.collection = id;
+    else delete item.collection;
+  };
+  carry(down, held, place, drop, now);
 }
 
 /** One collection's shelf: a grip to drag it by (in the margin, when pointed at), a dot that
@@ -532,7 +615,7 @@ function shelf(collection, list) {
     grip.addEventListener('pointerdown', (e) => {
       if (e.button !== 0) return;
       e.preventDefault();
-      dragShelf(collection, grip, e);
+      dragShelf(grip, e);
     });
     head.append(grip);
     const dot = el('button', 'band-dot');
@@ -631,7 +714,8 @@ function drawShelf() {
   if (tab.shelves) return $('shelf-body').replaceChildren(...shelves());
   if (!tab.tools) {
     const list = items.filter(tab.test);
-    return $('shelf-body').replaceChildren(list.length || !tab.empty ? grid(list) : el('p', 'band-none', tab.empty));
+    if (tab.dated) list.sort((a, b) => (a.finished ?? 0) - (b.finished ?? 0)); // the latest finished first
+    return $('shelf-body').replaceChildren(list.length || !tab.empty ? grid(list, '', tab.dated) : el('p', 'band-none', tab.empty));
   }
   // Library: everything, of the kinds chosen, in the order chosen.
   if (!items.length) return $('shelf-body').replaceChildren(begin());
@@ -640,7 +724,11 @@ function drawShelf() {
 }
 
 function showLibrary() {
+  closePanel();
   open = null;
+  wear();
+  window.api.watchPointer(false);
+  reveal(true, false);
   document.body.dataset.screen = 'library';
   $('reading').hidden = true;
   $('library').hidden = false;
@@ -649,30 +737,208 @@ function showLibrary() {
 
 // ---------- reading ----------
 
-/** Lines standing in for a paragraph: full ones, then a short last line. */
-function paragraph(lines, last) {
-  const made = [];
-  for (let i = 0; i < lines; i++) {
-    const line = el('div', 'line');
-    if (i === lines - 1) {
-      line.classList.add('end');
-      line.style.width = last + '%';
-    }
-    made.push(line);
-  }
-  return made;
-}
+// Until there is a reader, every item opens on the same few paragraphs.
+const TEXT = [
+  'This is stand-in text. It is here so the page has words on it while the reader is being designed, and it will go when real books, PDFs and articles can be opened.',
+  'A page asks for very little. It wants a column narrow enough that the eye finds the start of the next line without hunting for it, and lines far enough apart that each can be read on its own. It wants margins, so the words are not pressed against the edge of anything. Past that, most of what can be added to a page takes something away from it.',
+  'So the window is kept quiet. The list of tabs slides out of the way when something is opened, and the bar along the top goes with it. Move the pointer up to the top of the window and the bar comes back: the way back to the library, the name of what you are reading, and two buttons, one for the contents and one for how the text is set.',
+  'How far through you are is kept out of sight in the same way. Move the pointer down to the foot of the window and a number appears in the corner. Move it away and the number goes. Nothing else is down there.',
+  'The column does not grow with the window. Make the window wider and the margins take the extra room; the lines stay the length they were. A line of sixty to seventy-five characters is about what a reader can take in without losing the way back to the left edge, and that holds whether the screen is small or very large.',
+  'Reading on a screen is mostly scrolling, and scrolling has no pages to turn. That is a loss of one kind, because a page is a small unit of progress and turning it is a small reward. It is a gain of another, because nothing is ever split across a turn. Which of the two this reader should be is still to be decided.',
+  'Whatever is decided, the text comes first. Everything around it should be easy to find when it is wanted and easy to forget when it is not.',
+  'The paragraphs that follow are only here so that there is enough on the page to scroll.',
+  'A library is a record of intentions as much as of reading. Some of what is in it has been finished, some was put down halfway, and some has never been opened and may never be. The shelves do not mind. They hold all of it the same way, and the line on each card says how far you got.',
+  'Coming back to a book after a week away, the first thing wanted is the place where you stopped. The second is some sense of what came just before it. A reader that opens where you left off answers the first; the heading above the text goes some way toward the second.',
+  'That is the end of the stand-in text.',
+];
 
+/** Opens an item: a book at its chapter, anything else under its own title and author. */
 function read(item) {
   open = item;
-  $('page').replaceChildren(el('h2', '', item.title), el('p', 'byline', item.author), ...paragraph(6, 46), ...paragraph(8, 72), ...paragraph(5, 30), ...paragraph(7, 58));
-  $('progress').textContent = placeOf(item);
+  const head = item.chapter ? [el('p', 'over', 'Chapter ' + item.chapter[0]), el('h2', '', item.chapter[2])] : [el('h2', '', item.title), el('p', 'byline', item.author)];
+  $('page').replaceChildren(...head, ...TEXT.map((words) => el('p', 'text', words)));
+  $('place').textContent = Math.round(item.progress * 100) + '%';
+  wear();
+  zone = 'none';
+  reveal(false, false);
+  window.api.watchPointer(true);
   document.body.dataset.screen = 'reading';
   $('library').hidden = true;
   $('reading').hidden = false;
   $('reading').scrollTop = 0;
   drawCrumbs();
 }
+
+// While reading, the top bar and the place in the corner keep out of sight until the pointer
+// goes to where they are: the top of the window, the foot of it. The main process watches
+// the pointer and says which it is at.
+let bar = true; // the top bar is in sight
+
+function reveal(top, foot) {
+  document.body.dataset.foot = foot ? 'shown' : 'hidden';
+  if (top === bar) return;
+  bar = top;
+  document.body.dataset.bar = top ? 'shown' : 'hidden';
+  window.api.windowButtons(top); // the window buttons come and go with the bar
+}
+
+let zone = 'none'; // where the pointer is: 'top', 'foot' or 'none'
+
+/** Shows what the pointer has gone to. The bar also stays while the text panel hangs from it. */
+function settle() {
+  if (open) reveal(Boolean(panel) || zone === 'top', zone === 'foot');
+}
+
+window.api.onPointer((now) => {
+  zone = now;
+  settle();
+});
+
+// ---------- how the text is set ----------
+// The theme the reader wears, the face and size of the text being read, the space between its
+// lines and the width of its column, chosen in a panel that hangs from the top bar's text button, and kept between runs.
+
+// The themes are the reader's own (their colours are in style.css). Until one is chosen the
+// reader wears what the app wears.
+const THEMES = [['white', 'White'], ['light', 'Light'], ['sepia', 'Sepia'], ['dusk', 'Dusk'], ['dark', 'Dark'], ['black', 'Black']];
+const FACES = [['sans', 'Sans', 'var(--font)'], ['serif', 'Serif', 'var(--font-serif)']];
+const SIZE = { least: 14, most: 24 };
+const SPACINGS = [['tight', 'Tight', 1.5], ['normal', 'Normal', 1.7], ['loose', 'Loose', 1.9]];
+const WIDTHS = [['narrow', 'Narrow', 540], ['normal', 'Normal', 620], ['wide', 'Wide', 720]];
+const setting = { theme: null, face: 'sans', size: 17, spacing: 'normal', width: 'normal' };
+try {
+  Object.assign(setting, JSON.parse(localStorage.getItem('text')));
+} catch {
+  // nothing kept, or nothing that can be read: the text is set as it comes
+}
+
+/** The window wears the reader's theme while something is being read, and the app's own
+    colours otherwise. */
+function wear() {
+  if (open && THEMES.some(([id]) => id === setting.theme)) document.documentElement.dataset.theme = setting.theme;
+  else delete document.documentElement.dataset.theme;
+}
+
+/** Sets the text as `setting` says. What was being read stays where it was in the window. */
+function setText() {
+  const reading = $('reading');
+  const room = () => reading.scrollHeight - reading.clientHeight;
+  const at = room() > 0 ? reading.scrollTop / room() : 0;
+  const root = document.documentElement.style;
+  root.setProperty('--read-font', (FACES.find(([id]) => id === setting.face) ?? FACES[0])[2]);
+  root.setProperty('--read-size', setting.size + 'px');
+  root.setProperty('--read-leading', (SPACINGS.find(([id]) => id === setting.spacing) ?? SPACINGS[1])[2]);
+  root.setProperty('--read-width', (WIDTHS.find(([id]) => id === setting.width) ?? WIDTHS[1])[2] + 'px');
+  reading.scrollTop = at * room();
+  wear();
+  localStorage.setItem('text', JSON.stringify(setting));
+}
+
+let panel = null; // the text panel, when it is open
+let theming = 0; // the wait until a change of theme is over
+const textTool = document.querySelector('[data-tool="text"]');
+
+/** What the panel holds: the themes, a dot for each; the face, each choice written in itself; the size, stepped down or
+    up; then the spacing and the width, each one of three. */
+function drawPanel() {
+  const group = (name, value, choices, strip = 'seg') => {
+    const head = el('div', 'panel-head');
+    head.append(el('span', '', name));
+    if (value != null) head.append(el('span', typeof value === 'number' ? 'panel-value' : '', value)); // a number, in the mono
+    const row = el('div', strip);
+    row.append(...choices);
+    return [head, row];
+  };
+  const choice = (label, on, run, className) => {
+    const made = el('button', className, label);
+    made.type = 'button';
+    if (on != null) made.setAttribute('aria-pressed', String(on));
+    made.addEventListener('click', () => {
+      run();
+      setText();
+      drawPanel();
+    });
+    return made;
+  };
+  const step = (by, label, className) => {
+    const made = choice('A', null, () => (setting.size += by), className);
+    made.setAttribute('aria-label', label);
+    made.disabled = setting.size + by < SIZE.least || setting.size + by > SIZE.most;
+    return made;
+  };
+  const held = panel.contains(document.activeElement) ? [...panel.querySelectorAll('button')].indexOf(document.activeElement) : -1;
+  const faces = FACES.map(([id, label, family]) => {
+    const made = choice(label, setting.face === id, () => (setting.face = id));
+    made.style.fontFamily = family;
+    return made;
+  });
+  // With none chosen, the one the app is wearing is the one worn.
+  const worn = setting.theme ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  // Choosing a theme leaves the panel as it is, bar the ring and the name, so that it changes
+  // colour along with everything else and is not drawn afresh in the new one.
+  const dots = THEMES.map(([id, name]) => {
+    const made = el('button', 'dot');
+    made.type = 'button';
+    made.dataset.theme = id;
+    made.dataset.tip = name;
+    made.setAttribute('aria-label', name);
+    made.setAttribute('aria-pressed', String(worn === id));
+    made.addEventListener('click', () => {
+      setting.theme = id;
+      const root = document.documentElement;
+      root.classList.add('theming');
+      clearTimeout(theming);
+      theming = setTimeout(() => root.classList.remove('theming'), 300);
+      setText();
+      for (const dot of dots) dot.setAttribute('aria-pressed', String(dot === made));
+      panel.querySelector('.panel-head span:last-child').textContent = name;
+    });
+    return made;
+  });
+  panel.replaceChildren(
+    ...group('Theme', THEMES.find(([id]) => id === worn)[1], dots, 'dots'),
+    ...group('Typeface', null, faces),
+    ...group('Size', setting.size, [step(-1, 'Smaller text', 'seg-small'), step(1, 'Larger text', 'seg-large')]),
+    ...group('Spacing', null, SPACINGS.map(([id, label]) => choice(label, setting.spacing === id, () => (setting.spacing = id)))),
+    ...group('Width', null, WIDTHS.map(([id, label]) => choice(label, setting.width === id, () => (setting.width = id)))),
+  );
+  if (held >= 0) panel.querySelectorAll('button')[held].focus(); // the keyboard keeps its place
+}
+
+function closePanel() {
+  if (!panel) return;
+  panel.remove();
+  panel = null;
+  textTool.setAttribute('aria-expanded', 'false');
+  textTool.dataset.tip = textTool.getAttribute('aria-label');
+  settle();
+}
+
+function openPanel() {
+  panel = el('div', 'menu panel');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'Text settings');
+  drawPanel();
+  document.body.append(panel);
+  // Under its button, their right edges together, as a menu hangs.
+  const from = textTool.getBoundingClientRect();
+  const box = panel.getBoundingClientRect();
+  panel.style.left = Math.max(8, Math.min(from.right - box.width, innerWidth - box.width - 8)) + 'px';
+  panel.style.top = from.bottom + 6 + 'px';
+  textTool.setAttribute('aria-expanded', 'true');
+  delete textTool.dataset.tip; // open, the panel says what the button is for
+  hideTip();
+  settle();
+}
+
+textTool.addEventListener('click', () => (panel ? closePanel() : openPanel()));
+// A press anywhere else closes it, as does the window changing size or losing the keyboard.
+document.addEventListener('mousedown', (e) => {
+  if (panel && !panel.contains(e.target) && !textTool.contains(e.target)) closePanel();
+}, true);
+window.addEventListener('blur', closePanel);
+window.addEventListener('resize', closePanel);
+setText();
 
 for (const button of document.querySelectorAll('#rail [data-tab]')) {
   button.addEventListener('click', () => choose(button.dataset.tab));
@@ -696,6 +962,7 @@ window.addEventListener('keydown', (e) => {
   }
   if (e.key !== 'Escape') return;
   if (menu) closeMenu(); // Escape closes a menu,
+  else if (panel) closePanel(); // or the text panel,
   else if (open) showLibrary(); // or what is being read,
   else if (palette) (palette = null), drawShelf(); // or puts the colours away
 });

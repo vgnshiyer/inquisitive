@@ -7,11 +7,13 @@
     <link rel="stylesheet" href="../node_modules/@fontsource-variable/schibsted-grotesk/index.css" />
     <link rel="stylesheet" href="../node_modules/@fontsource-variable/geist-mono/index.css" />
     <link rel="stylesheet" href="../node_modules/@fontsource-variable/fraunces/index.css" />
+    <link rel="stylesheet" href="../node_modules/@fontsource-variable/literata/index.css" />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body data-screen="library">
     <!-- Top bar: the window buttons, the button that widens the rail (or, while reading, the
-         way back), and the screen's own buttons. -->
+         path back), and the screen's own buttons. While reading it keeps out of sight until
+         the pointer comes up to it. -->
     <header id="top">
       <button id="rail-toggle" class="tool" type="button" aria-controls="rail"><span class="icon" aria-hidden="true"></span></button>
       <nav id="crumbs" aria-label="Where you are"></nav>
@@ -21,6 +23,7 @@
       </div>
       <div id="reading-tools" class="tools">
         <button class="tool" type="button" data-tool="contents" aria-label="Contents" data-tip="Contents"><span class="icon" aria-hidden="true"></span></button>
+        <button class="tool" type="button" data-tool="text" aria-label="Text settings" data-tip="Text settings"><span class="icon" aria-hidden="true"></span></button>
       </div>
     </header>
 
@@ -43,10 +46,11 @@
       </div>
     </main>
 
-    <!-- Reading: the page has the whole window. -->
+    <!-- Reading: the rail slides away and the page has the window: one column of text. How
+         far through you are shows in the corner when the pointer goes down to it. -->
     <main id="reading" hidden>
       <article id="page"></article>
-      <span id="progress"></span>
+      <span id="place"></span>
     </main>
 
     <script src="app.js"></script>
