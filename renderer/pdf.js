@@ -68,6 +68,13 @@ window.Pdf = {
     return { canvas, words, shape: flat.width / flat.height };
   },
 
+  /** One page's words (counted from 1) as they are searched: its runs of text one after
+      another, with a new line wherever a line ends. */
+  async text(doc, number) {
+    const { items } = await (await doc.getPage(number)).getTextContent({ disableNormalization: true });
+    return items.map((item) => item.str + (item.hasEOL ? '\n' : '')).join('');
+  },
+
   /** Puts a PDF away. */
   close(pdf) {
     pdf?.task.destroy();

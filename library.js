@@ -59,6 +59,40 @@ function save(state) {
   fs.renameSync(aside, record());
 }
 
+// ---------- highlights ----------
+// What is highlighted in an item, and the notes written on it, are kept in a file of their
+// own in the library folder: Highlights/<the item's file name>.json. It is written only when
+// one of them changes, and is gone when the last of them is.
+
+const lights = (file) => within(path.join('Highlights', path.basename(within(file)) + '.json'));
+
+/** An item's highlights; none if it has no file of them. A file that cannot be read is set
+    aside, not written over. */
+function highlights(file) {
+  let text;
+  try {
+    text = fs.readFileSync(lights(file), 'utf8');
+  } catch {
+    return [];
+  }
+  try {
+    const kept = JSON.parse(text);
+    return Array.isArray(kept.highlights) ? kept.highlights : [];
+  } catch {
+    fs.renameSync(lights(file), lights(file).replace(/\.json$/, `.unreadable-${Date.now()}.json`));
+    return [];
+  }
+}
+
+/** Writes an item's highlights: to one side first, then into place. */
+function keepHighlights(file, title, list) {
+  const to = lights(file);
+  if (!Array.isArray(list) || !list.length) return void fs.rmSync(to, { force: true });
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.writeFileSync(to + '.writing', JSON.stringify({ version: 1, title: String(title ?? ''), highlights: list }, null, 2));
+  fs.renameSync(to + '.writing', to);
+}
+
 // ---------- inside a book ----------
 // An EPUB is a zip. This reads one: the list of what is in it from the directory at its end,
 // then any file in it on request. (Zips of more than 4GB, which use another form, are not read.)
@@ -281,11 +315,16 @@ function listen() {
   ipcMain.handle('library:keep', (event, article) => keep(article ?? {}).catch((error) => ({ error: error.message })));
   // Taking a book out of the library puts its file in the Trash, where it can be got back.
   // (A test run deletes it outright, so as not to fill the real Trash, and shows no dialogs.)
+  // Its highlights go with it.
   ipcMain.handle('library:discard', async (event, file) => {
     opened.delete(file);
-    if (headless) fs.rmSync(within(file), { recursive: true, force: true });
-    else await shell.trashItem(within(file)).catch(() => {});
+    for (const gone of [lights(file), within(file)]) {
+      if (headless) fs.rmSync(gone, { recursive: true, force: true });
+      else if (fs.existsSync(gone)) await shell.trashItem(gone).catch(() => {});
+    }
   });
+  ipcMain.handle('library:highlights', (event, file) => highlights(file));
+  ipcMain.handle('library:keep-highlights', (event, file, title, list) => keepHighlights(file, title, list));
   ipcMain.handle('library:notify', (event, message) => (headless ? null : dialog.showMessageBox(BrowserWindow.fromWebContents(event.sender), { type: 'info', message: String(message) })));
   // A link in a book that leads out to the web opens in the browser.
   ipcMain.on('library:out', (event, address) => {

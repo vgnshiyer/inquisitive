@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('api', {
     bytes: (file) => ipcRenderer.invoke('library:bytes', file),
     /** The size of every file inside a book. */
     sizes: (file) => ipcRenderer.invoke('library:sizes', file),
+    /** What is highlighted in an item, and the notes on it. */
+    highlights: (file) => ipcRenderer.invoke('library:highlights', file),
+    /** Keep an item's highlights. */
+    keepHighlights: (file, title, list) => ipcRenderer.invoke('library:keep-highlights', file, title, list),
     /** Put a book's file in the Trash. */
     discard: (file) => ipcRenderer.invoke('library:discard', file),
     /** Tell the reader something, in a dialog. */

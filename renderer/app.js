@@ -202,6 +202,7 @@ function closeMenu() {
 function openMenu(entries, at, long) {
   closeMenu();
   closePanel();
+  closeFind();
   const node = el('div', long ? 'menu long' : 'menu');
   node.setAttribute('role', 'menu');
   for (const entry of entries) {
@@ -1146,6 +1147,7 @@ function read(item) {
   save();
   $('place').textContent = Math.round(item.progress * 100) + '%';
   contentsTool.hidden = !item.chapters; // only what has chapters has contents (a real book says, once it is open)
+  findTool.hidden = !item.file; // a stand-in has no words of its own to look through
   wear();
   zone = 'none';
   reveal(false, false);
@@ -1192,7 +1194,8 @@ async function bind(item) {
   // How much of the book lies before each section, by size.
   const before = [0];
   for (const section of shape.sections) before.push(before.at(-1) + section.size);
-  const mine = (book = { item, ...shape, parts, before, fetched: new Map(), dressed: new Set(), sheet: new CSSStyleSheet(), ready: false });
+  const mine = (book = { item, ...shape, parts, before, fetched: new Map(), dressed: new Set(), sheet: new CSSStyleSheet(), lights: [], ready: false });
+  readLights(mine);
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, mine.sheet]; // the book's own styling, such of it as is kept
   contentsTool.hidden = !shape.toc.length;
   item.sections = parts.length;
@@ -1204,6 +1207,14 @@ async function bind(item) {
   // From here the page fetches whatever it comes near.
   mine.watch = new IntersectionObserver((seen) => seen.forEach((entry) => entry.isIntersecting && fill(Number(entry.target.dataset.index))), { root: $('reading'), rootMargin: '1400px 0px' });
   parts.forEach((part) => mine.watch.observe(part));
+}
+
+/** Reads what is highlighted in the book just opened. */
+async function readLights(mine) {
+  const kept = await window.api.library.highlights(mine.item.file).catch(() => []);
+  if (book !== mine) return;
+  mine.lights = kept.filter((light) => light && typeof light.text === 'string' && Number.isInteger(light.section) && light.section >= 0 && light.section < mine.parts.length && Number.isInteger(light.start) && Number.isInteger(light.end));
+  relight();
 }
 
 /** Opens a real PDF on the page, at the place it was left. It is a book of another kind: each
@@ -1228,7 +1239,8 @@ async function bindPdf(item) {
     return sheet;
   });
   page.replaceChildren(...parts);
-  const mine = (book = { item, pdf, sections: parts.map(() => ({ size: 1 })), toc: pdf.toc, parts, before: Array.from({ length: parts.length + 1 }, (_, i) => i), fetched: new Map(), ready: false });
+  const mine = (book = { item, pdf, sections: parts.map(() => ({ size: 1 })), toc: pdf.toc, parts, before: Array.from({ length: parts.length + 1 }, (_, i) => i), fetched: new Map(), lights: [], ready: false });
+  readLights(mine);
   contentsTool.hidden = !pdf.toc.length;
   item.pages = item.sections = parts.length;
   seek(item.at ?? { section: 0, part: 0 });
@@ -1246,6 +1258,7 @@ function drawSheet(mine, index) {
       canvas.className = 'leaf';
       sheet.style.aspectRatio = String(shape);
       sheet.replaceChildren(canvas, words);
+      arrived(index);
     };
     sheet.dataset.drawn = sheet.clientWidth; // how wide it was drawn for
     const drawing = Pdf.draw(mine.pdf.doc, index + 1, sheet.clientWidth).then(done, () => {});
@@ -1259,6 +1272,9 @@ function blank(index) {
   if (!book?.pdf || !book.fetched.has(index)) return;
   book.fetched.delete(index);
   book.parts[index].replaceChildren(el('div', 'leaf'));
+  marks.delete(index);
+  lightPart(index);
+  layNotes();
 }
 
 /** Draws again the pages now drawn whose sheets have changed width. (One that has not is left
@@ -1289,6 +1305,7 @@ function fill(index) {
     const done = (content) => {
       if (content) part.replaceChildren(content);
       part.style.minHeight = '';
+      if (book === mine) arrived(index);
       mine.watch?.unobserve(part);
       const pictures = [...part.querySelectorAll('img')].filter((picture) => !picture.complete).map((picture) => new Promise((come) => (picture.onload = picture.onerror = come)));
       return Promise.race([Promise.all(pictures), new Promise((enough) => setTimeout(enough, 2000))]);
@@ -1378,10 +1395,18 @@ function note() {
 function shut() {
   if (!book) return;
   note();
+  closeFind();
+  find = null;
+  remark();
+  drawFound();
+  closePicker();
+  if (writing) wrote();
   book.watch?.disconnect();
   document.adoptedStyleSheets = document.adoptedStyleSheets.filter((sheet) => sheet !== book.sheet);
   Pdf.close(book.pdf);
   book = null;
+  relight();
+  layNow();
   save(true);
 }
 
@@ -1432,6 +1457,724 @@ contentsTool.addEventListener('click', () => {
   openMenu(chapters, contentsTool, true);
 });
 
+// ---------- finding in what is open ----------
+// Find looks through the whole of the book, article or PDF that is open, a section at a
+// time, reading each one's words as they are wanted and keeping them while it stays open.
+// What is found is listed in a panel hung from the top bar's find button, each with the
+// words around it, under the chapter it is in (or, in a PDF, the page); choosing one goes to
+// it. Those on the page are marked there, until the field is emptied.
+//
+// The way of it follows foliate-js (search.js and text-walker.js, MIT, by John Factotum):
+// the words of a section are its text nodes laid end to end, a match is found in that one
+// string, and is turned back into the stretch of the page it came from.
+
+// Where one of these ends, so does a word.
+const BLOCKS = new Set('address article aside blockquote br dd div dl dt figcaption figure footer h1 h2 h3 h4 h5 h6 header hr li ol p pre section table td th tr ul'.split(' '));
+
+/** The words under a node as one string: its text nodes end to end, with a space wherever a
+    block or a line ends. With it, each text node and where in the string it starts, and
+    where each named element starts. */
+function textOf(root) {
+  let text = '';
+  let gap = false;
+  const nodes = [];
+  const names = new Map();
+  const walk = (node) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === Node.TEXT_NODE) {
+        if (gap && text) text += ' ';
+        gap = false;
+        nodes.push([child, text.length]);
+        text += child.nodeValue;
+      } else if (child.nodeType === Node.ELEMENT_NODE) {
+        const block = BLOCKS.has(child.localName);
+        if (block) gap = true;
+        if (child.id) names.set(child.id, text.length);
+        walk(child);
+        if (block) gap = true;
+      }
+    }
+  };
+  walk(root);
+  return { text, nodes, names };
+}
+
+const QUOTES = { '‘': "'", '’': "'", '“': '"', '”': '"' };
+
+/** Text as it is searched: without accents or capitals, its curled quotes straightened, what
+    cannot be seen (a soft hyphen, say) left out, and each run of space as one space. With it,
+    for each letter, where in the text it came from, and where that ended. */
+function folded(text) {
+  let out = '';
+  let spaced = true; // no space is wanted next: at the start, or after one
+  const from = [];
+  const to = [];
+  for (let i = 0, size; i < text.length; i += size) {
+    const code = text.charCodeAt(i);
+    size = code >= 0xd800 && code <= 0xdbff ? 2 : 1;
+    let piece;
+    if (code < 128) {
+      piece = code === 32 || (code >= 9 && code <= 13) ? ' ' : code >= 65 && code <= 90 ? String.fromCharCode(code + 32) : text[i];
+    } else {
+      const letter = text.slice(i, i + size);
+      piece = /\s/.test(letter) ? ' ' : QUOTES[letter] ?? plainOf(letter).replace(/\p{Cf}/gu, '');
+    }
+    if (!piece || (piece === ' ' && spaced)) continue;
+    spaced = piece === ' ';
+    for (let k = 0; k < piece.length; k++) from.push(i), to.push(i + size);
+    out += piece;
+  }
+  return { text: out, from, to };
+}
+
+/** Where folded text holds what is asked for: each a start and an end in the text it was
+    folded from. */
+function hits(fold, asked) {
+  const found = [];
+  for (let at = fold.text.indexOf(asked); at >= 0; at = fold.text.indexOf(asked, at + asked.length)) found.push([fold.from[at], fold.to[at + asked.length - 1]]);
+  return found;
+}
+
+/** The stretch of the page between two places in a node's words (as textOf gave them). */
+function rangeOf(nodes, start, end) {
+  const holding = (place) => {
+    let low = 0;
+    let high = nodes.length - 1;
+    while (low < high) {
+      const mid = (low + high + 1) >> 1;
+      if (nodes[mid][1] <= place) low = mid;
+      else high = mid - 1;
+    }
+    return nodes[low];
+  };
+  const [first, began] = holding(start);
+  const [last, begun] = holding(end - 1);
+  const range = document.createRange();
+  range.setStart(first, Math.min(start - began, first.length));
+  range.setEnd(last, Math.min(end - begun, last.length));
+  return range;
+}
+
+/** One section's words, read once: the text, where its named places are, and the text
+    folded for searching. */
+function wordsOf(mine, index) {
+  mine.words ??= new Map();
+  if (!mine.words.has(index)) {
+    const read = mine.pdf ? Pdf.text(mine.pdf.doc, index + 1).then((text) => ({ text, names: new Map() })) : Book.text(mine.item, mine, index).then(textOf);
+    mine.words.set(index, read.then(({ text, names }) => ({ text, names, fold: folded(text) })));
+  }
+  return mine.words.get(index);
+}
+
+/** What is found, with a few of the words before it and rather more of those after, each
+    cut at the edge of a word. */
+function quoted(text, start, end) {
+  const LEAD = 28;
+  const TAIL = 72;
+  const squeezed = (words) => words.replace(/\s+/g, ' ');
+  let pre = squeezed(text.slice(Math.max(0, start - LEAD * 3), start)).trimStart();
+  if (pre.length > LEAD) pre = '…' + pre.slice(-LEAD).replace(/^\S*\s/, '');
+  let post = squeezed(text.slice(end, end + TAIL * 3)).trimEnd();
+  if (post.length > TAIL) post = post.slice(0, TAIL).replace(/\s\S*$/, '') + '…';
+  return { pre, hit: squeezed(text.slice(start, end)), post };
+}
+
+/** What a find is listed under: in a PDF its page, otherwise the last of the contents'
+    entries to start at or before it (none, if it comes before them all). */
+function headOf(mine, section, start, names) {
+  if (mine.pdf) return 'Page ' + (section + 1);
+  return mine.toc.findLast((entry) => entry.section < section || (entry.section === section && (names.get(entry.place) ?? 0) <= start))?.title ?? '';
+}
+
+const MOST = 1000; // as many as are listed
+let find = null; // what is being looked for in what is open: the words asked for, what has been found so far, and which of those has been gone to
+const findTool = document.querySelector('[data-tool="find"]');
+
+/** Looks for what is asked through the whole of what is open, listing what is found as it
+    goes. Asking for nothing puts the find away. */
+async function look(query) {
+  const mine = book;
+  const asked = folded(query).text.trim();
+  if (find) find.query = query;
+  if (asked === (find?.asked ?? '')) return;
+  const run = (find = asked ? { query, asked, found: [], at: -1, done: false, more: false } : null);
+  remark();
+  drawFound();
+  if (!run) return;
+  let drawn = performance.now();
+  for (let section = 0; section < mine.parts.length && !run.more; section++) {
+    const words = await wordsOf(mine, section).catch(() => null);
+    if (book !== mine || find !== run) return; // shut, or something else asked for, meanwhile
+    const before = run.found.length;
+    for (const [start, end] of words ? hits(words.fold, asked) : []) {
+      if (run.found.length === MOST) {
+        run.more = true;
+        break;
+      }
+      run.found.push({ section, nth: run.found.length - before, head: headOf(mine, section, start, words.names), ...quoted(words.text, start, end) });
+    }
+    if (run.found.length > before && performance.now() - drawn > 100) {
+      drawFound();
+      drawn = performance.now();
+    }
+  }
+  run.done = true;
+  drawFound();
+}
+
+// What is found is marked on the page as the selection is, by stretches of it that the
+// stylesheet colours (::highlight): nothing on the page is changed. A part's are worked out
+// when its words arrive, and again when what is asked for changes.
+const marks = new Map(); // for each part that has any, its stretches, in order
+const lines = new WeakMap(); // the words of a part on the page, worked out once
+
+/** Works out the marks of one part of the page. */
+function markPart(index) {
+  marks.delete(index);
+  const root = find && rootOf(index);
+  if (!root) return;
+  const words = linesOf(root);
+  words.fold ??= folded(words.text);
+  const ranges = hits(words.fold, find.asked).map(([start, end]) => rangeOf(words.nodes, start, end));
+  if (ranges.length) marks.set(index, ranges);
+}
+
+/** Shows the marks: the one gone to apart from the rest. */
+function paint() {
+  const here = find?.found[find.at];
+  const now = here && marks.get(here.section)?.[here.nth];
+  const rest = new Highlight();
+  for (const ranges of marks.values()) for (const range of ranges) if (range !== now) rest.add(range);
+  const one = now ? new Highlight(now) : new Highlight();
+  rest.priority = 1; // over a highlight, a mark of find's shows
+  one.priority = 2;
+  CSS.highlights.set('found', rest);
+  CSS.highlights.set('found-here', one);
+}
+
+/** Marks afresh every part now on the page. */
+function remark() {
+  marks.clear();
+  if (book && find) for (const index of book.fetched.keys()) markPart(index);
+  paint();
+}
+
+/** A part's words have just arrived on the page (or arrived again): what find has found
+    in it is marked, and what is highlighted in it washed. */
+function arrived(index) {
+  lines.delete(book.parts[index]);
+  if (find) {
+    markPart(index);
+    paint();
+  }
+  lightPart(index);
+  paintLights();
+  layNotes();
+}
+
+/** Goes to one of what was found: it is brought a third of the way down the window. */
+async function goFound(at) {
+  const mine = book;
+  const run = find;
+  const hit = run.found[at];
+  run.at = at;
+  if (finder) clearTimeout(finder.wait), (finder.wait = 0); // (anything typed since is let go)
+  closeFind();
+  await (mine.pdf ? fill(hit.section) : around(hit.section));
+  if (book !== mine || find !== run) return;
+  paint();
+  const reading = $('reading');
+  const range = marks.get(hit.section)?.[hit.nth];
+  if (range?.getClientRects().length) reading.scrollTop += range.getBoundingClientRect().top - reading.getBoundingClientRect().top - reading.clientHeight * 0.3;
+  else reading.scrollTop = depthOf(mine.parts[hit.section]) - lineOf(); // its words are not to be seen on the page (the book hides them, say): its part, then
+  $('page').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease' }); // it arrives as a page does
+}
+
+let finder = null; // the find panel, when it is open: its parts, the find it shows, and the row marked
+
+/** Marks a row of the list, the one Return goes to, and if asked brings it into view. */
+function markRow(index, show) {
+  finder.rows[finder.mark]?.classList.remove('on');
+  finder.mark = index;
+  const row = finder.rows[index];
+  row?.classList.add('on');
+  if (!row || !show) return;
+  // Into view in the list: in the middle of it, or only as far as it must come.
+  const box = row.getBoundingClientRect();
+  const frame = finder.list.getBoundingClientRect();
+  if (show === 'middle') finder.list.scrollTop += box.top - frame.top - (frame.height - box.height) / 2;
+  else if (box.top < frame.top) finder.list.scrollTop += box.top - frame.top;
+  else if (box.bottom > frame.bottom) finder.list.scrollTop += box.bottom - frame.bottom;
+}
+
+/** Lists what has been found so far: only what is new since it was last drawn is added. */
+function drawFound() {
+  findTool.classList.toggle('on', Boolean(find));
+  if (!finder) return;
+  const { list, rows } = finder;
+  const fresh = finder.shown !== find;
+  if (fresh) {
+    finder.shown = find;
+    finder.mark = -1;
+    rows.length = 0;
+    list.replaceChildren();
+  }
+  const found = find?.found ?? [];
+  list.querySelector('.finder-none')?.remove();
+  for (let index = rows.length; index < found.length; index++) {
+    const hit = found[index];
+    if (hit.head && hit.head !== found[index - 1]?.head) list.append(el('div', 'finder-label', hit.head));
+    const row = el('button', 'finder-row');
+    row.type = 'button';
+    const words = el('span', 'finder-words');
+    words.append(hit.pre, el('b', '', hit.hit), hit.post);
+    row.append(words);
+    row.addEventListener('click', () => goFound(index));
+    row.addEventListener('pointermove', () => finder.mark === index || markRow(index));
+    rows.push(row);
+    list.append(row);
+  }
+  const kind = open.kind === 'pdf' ? 'PDF' : open.kind;
+  if (find?.done && !found.length) list.append(el('p', 'finder-none', `Nothing in this ${kind} matches.`));
+  if (find?.more) list.append(el('p', 'finder-none', `Only the first ${MOST.toLocaleString('en-US')} are listed.`));
+  list.hidden = !find;
+  finder.count.textContent = found.length ? found.length.toLocaleString('en-US') + (find.more ? '+' : '') : '';
+  finder.clear.hidden = !finder.field.value;
+  // The row marked to begin with is the one last gone to, in the middle of the list, or else the first.
+  if (finder.mark < 0 && found.length) markRow(Math.max(0, find.at), fresh && find.at > 0 ? 'middle' : null);
+}
+
+function closeFind() {
+  if (!finder) return;
+  const { node, field, wait } = finder;
+  finder = null;
+  node.remove();
+  if (wait) look(field.value); // what was typed last is what is looked for
+  clearTimeout(wait);
+  findTool.setAttribute('aria-expanded', 'false');
+  findTool.dataset.tip = findTool.getAttribute('aria-label');
+  settle();
+}
+
+function openFind() {
+  if (!book) return;
+  if (finder) return finder.field.select();
+  closeMenu();
+  closePanel();
+  hideTip();
+  const kind = open.kind === 'pdf' ? 'PDF' : open.kind;
+  const node = el('form', 'menu finder');
+  node.setAttribute('role', 'dialog');
+  node.setAttribute('aria-label', `Find in this ${kind}`);
+  const field = el('input', 'finder-field');
+  field.type = 'text';
+  field.placeholder = `Find in this ${kind}`;
+  field.spellcheck = false;
+  field.autocomplete = 'off';
+  field.setAttribute('aria-label', field.placeholder);
+  field.value = find?.query ?? '';
+  const count = el('span', 'finder-count');
+  const clear = el('button', 'finder-clear');
+  clear.type = 'button';
+  clear.setAttribute('aria-label', 'Clear');
+  clear.append(el('span', 'icon'));
+  const head = el('label', 'finder-head');
+  head.append(el('span', 'icon'), field, count, clear);
+  const list = el('div', 'finder-list');
+  node.append(head, list);
+  finder = { node, field, count, clear, list, rows: [], shown: null, mark: -1, wait: 0 };
+
+  const ask = () => {
+    clearTimeout(finder.wait);
+    finder.wait = 0;
+    look(field.value);
+  };
+  field.addEventListener('input', () => {
+    clear.hidden = !field.value;
+    clearTimeout(finder.wait);
+    if (field.value.trim()) finder.wait = setTimeout(ask, 150); // once the typing pauses
+    else ask();
+  });
+  clear.addEventListener('click', () => {
+    field.value = '';
+    ask();
+    field.focus();
+  });
+  node.addEventListener('keydown', (e) => {
+    if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp') || !finder.rows.length) return;
+    e.preventDefault();
+    markRow((Math.max(0, finder.mark) + (e.key === 'ArrowDown' ? 1 : -1) + finder.rows.length) % finder.rows.length, 'nearest');
+  });
+  // Return looks at once for what has just been typed; then it goes to the row marked.
+  node.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (finder.wait) ask();
+    else if (finder.rows[finder.mark]) goFound(finder.mark);
+  });
+
+  document.body.append(node);
+  // Under its button, their right edges together, as a menu hangs.
+  const from = findTool.getBoundingClientRect();
+  const box = node.getBoundingClientRect();
+  node.style.left = Math.max(8, Math.min(from.right - box.width, innerWidth - box.width - 8)) + 'px';
+  node.style.top = from.bottom + 6 + 'px';
+  findTool.setAttribute('aria-expanded', 'true');
+  delete findTool.dataset.tip; // open, the panel says what the button is for
+  drawFound();
+  field.select();
+  settle();
+}
+
+findTool.addEventListener('click', () => (finder ? closeFind() : openFind()));
+// A press anywhere else closes it, as does the window changing size or losing the keyboard.
+document.addEventListener('mousedown', (e) => {
+  if (finder && !finder.node.contains(e.target) && !findTool.contains(e.target)) closeFind();
+}, true);
+window.addEventListener('blur', closeFind);
+window.addEventListener('resize', closeFind);
+
+// ---------- highlights and notes ----------
+// Selecting words on the page brings up a row of colours; choosing one highlights them. A
+// highlight may have a note, which is written in the margin beside it: on the right, or on
+// the left where the right is taken. A click on a highlight brings the row back, to change
+// its colour, write its note, or take it away.
+//
+// A highlight is kept as a place in its section's words (as find reads them: textOf), with
+// the words themselves, so that it can be found again should the place ever shift. They
+// are kept in a file of the item's own (library.js). On the page they are washed as find's
+// marks are, by stretches the stylesheet colours: nothing on the page is changed.
+
+const LIGHTS = [2, 0, 3, 5, 1]; // the colours a highlight can take, of the collections' (HUES): yellow, green, blue, pink, violet
+const lit = new Map(); // for each highlight now on the page, its stretch of it
+
+/** The words of a part on the page, worked out once (until its words arrive again). */
+function linesOf(root) {
+  if (!lines.has(root)) {
+    const { text, nodes } = textOf(root);
+    lines.set(root, { text, nodes, fold: null });
+  }
+  return lines.get(root);
+}
+
+/** Where a part's words are on the page: the part itself, or in a PDF the words laid over its picture. */
+const rootOf = (index) => (book.pdf ? book.parts[index].querySelector('.words') : book.parts[index]);
+
+/** Works out where one part's highlights are on the page. */
+function lightPart(index) {
+  for (const light of book.lights) if (light.section === index) lit.delete(light.id);
+  const root = book.fetched.has(index) && rootOf(index);
+  if (!root) return;
+  const { text, nodes } = linesOf(root);
+  if (!nodes.length) return;
+  for (const light of book.lights) {
+    if (light.section !== index) continue;
+    let { start, end } = light;
+    if (text.slice(start, end) !== light.text) {
+      // Its words are not where they were (the section is read a little differently now,
+      // say): they are taken to be where they next appear, nearest to there.
+      let near = -1;
+      for (let at = text.indexOf(light.text); at >= 0; at = text.indexOf(light.text, at + 1)) if (near < 0 || Math.abs(at - start) < Math.abs(near - start)) near = at;
+      if (near < 0) continue;
+      start = near;
+      end = near + light.text.length;
+    }
+    lit.set(light.id, rangeOf(nodes, start, end));
+  }
+}
+
+/** Shows the highlights: each colour's together. */
+function paintLights() {
+  for (const hue of LIGHTS) {
+    const washed = new Highlight();
+    for (const light of book?.lights ?? []) if (light.hue === hue && lit.has(light.id)) washed.add(lit.get(light.id));
+    CSS.highlights.set('light-' + hue, washed);
+  }
+}
+
+/** Works out afresh every highlight on the page. */
+function relight() {
+  lit.clear();
+  if (book) for (const index of book.fetched.keys()) lightPart(index);
+  paintLights();
+  layNotes();
+}
+
+const keepLights = () => window.api.library.keepHighlights(book.item.file, book.item.title, book.lights);
+
+/** Where in a part's words a place on the page is: within a text node, or, at the edge of an
+    element, where the next of the words after it starts. */
+function offsetOf({ text, nodes }, node, offset) {
+  const held = node.nodeType === Node.TEXT_NODE && nodes.find(([one]) => one === node);
+  if (held) return held[1] + offset;
+  const point = document.createRange();
+  point.setStart(node, offset);
+  const next = nodes.find(([one]) => point.comparePoint(one, 0) >= 0);
+  return next ? next[1] : text.length;
+}
+
+/** What is selected on the page, as a place in one part's words (the part it starts in),
+    without the space at either end of it. Nothing, if nothing there is selected. */
+function chosen() {
+  const selection = getSelection();
+  if (!book || !selection.rangeCount || selection.isCollapsed) return null;
+  const range = selection.getRangeAt(0);
+  const from = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
+  const part = from?.closest('.part, .sheet');
+  const index = book.parts.indexOf(part);
+  const root = index >= 0 && rootOf(index);
+  if (!root) return null;
+  const words = linesOf(root);
+  if (!words.nodes.length) return null;
+  let start = root.contains(range.startContainer) ? offsetOf(words, range.startContainer, range.startOffset) : 0;
+  let end = root.contains(range.endContainer) ? offsetOf(words, range.endContainer, range.endOffset) : words.text.length;
+  while (start < end && /\s/.test(words.text[start])) start++;
+  while (end > start && /\s/.test(words.text[end - 1])) end--;
+  return start < end ? { section: index, start, end, text: words.text.slice(start, end) } : null;
+}
+
+/** Highlights a place in a colour. */
+function addLight(place, hue) {
+  const light = { id: 'h' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), ...place, hue, note: '', made: Date.now() };
+  book.lights.push(light);
+  lightPart(light.section);
+  paintLights();
+  keepLights();
+  return light;
+}
+
+/** Takes a highlight away, and its note with it. */
+function removeLight(light) {
+  book.lights.splice(book.lights.indexOf(light), 1);
+  lit.delete(light.id);
+  paintLights();
+  layNotes();
+  keepLights();
+}
+
+/** The highlight under a point of the window, if there is one: the shortest, where they overlap. */
+function lightAt(x, y) {
+  let under = null;
+  for (const light of book.lights) {
+    const range = lit.get(light.id);
+    if (!range || (under && under.end - under.start <= light.end - light.start)) continue;
+    if ([...range.getClientRects()].some((box) => x >= box.left && x <= box.right && y >= box.top && y <= box.bottom)) under = light;
+  }
+  return under;
+}
+
+// The row of colours: a pill of them as a collection's are shown, then a line, then the way
+// to a note; and, for a highlight already made, the way to take it away.
+let picker = null; // the row, when it is up
+
+function closePicker() {
+  if (!picker) return;
+  picker.remove();
+  picker = null;
+  hideTip();
+}
+
+/** Puts the row up over a stretch of the page: for a place selected (to highlight it), or
+    for a highlight (to change it). */
+function openPicker(range, place, light) {
+  closePicker();
+  closeMenu();
+  closePanel();
+  closeFind();
+  const node = el('div', 'picker');
+  node.setAttribute('role', 'toolbar');
+  node.setAttribute('aria-label', 'Highlight');
+  const tool = (icon, label, run) => {
+    const made = el('button', 'picker-tool');
+    made.type = 'button';
+    made.dataset.tip = label;
+    made.setAttribute('aria-label', label);
+    const drawn = el('span', 'menu-icon');
+    drawn.dataset.icon = icon;
+    made.append(drawn);
+    made.addEventListener('click', () => {
+      closePicker();
+      run();
+    });
+    return made;
+  };
+  const last = () => LIGHTS.find((hue) => String(hue) === localStorage.getItem('hue')) ?? LIGHTS[0];
+  /** The highlight this is for: made now, in the colour last used, if it is yet to be. */
+  const made = () => {
+    if (light) return light;
+    getSelection().removeAllRanges();
+    return addLight(place, last());
+  };
+  for (const hue of LIGHTS) {
+    const swatch = el('button', 'swatch');
+    swatch.type = 'button';
+    swatch.dataset.hue = hue;
+    swatch.dataset.tip = HUES[hue];
+    swatch.setAttribute('aria-label', HUES[hue]);
+    swatch.setAttribute('aria-pressed', String(light?.hue === hue));
+    swatch.addEventListener('click', () => {
+      closePicker();
+      localStorage.setItem('hue', hue);
+      const one = made();
+      if (one.hue === hue) return;
+      one.hue = hue;
+      paintLights();
+      keepLights();
+    });
+    node.append(swatch);
+  }
+  node.append(el('span', 'picker-line'), tool('pen', light?.note ? 'Edit note' : 'Add a note', () => writeNote(made())));
+  if (light) node.append(tool('bin', 'Remove highlight', () => removeLight(light)));
+  node.addEventListener('mousedown', (e) => e.preventDefault()); // a press on it leaves what is selected as it is
+  document.body.append(node);
+  // Over the first line of the stretch, their left edges together; under its last line if
+  // there is no room above. Either way, in the window.
+  const boxes = range.getClientRects();
+  const mine = node.getBoundingClientRect();
+  const above = boxes[0].top - mine.height - 8;
+  node.style.left = Math.max(8, Math.min(boxes[0].left, innerWidth - mine.width - 8)) + 'px';
+  node.style.top = (above >= 8 ? above : Math.min(boxes[boxes.length - 1].bottom + 8, innerHeight - mine.height - 8)) + 'px';
+  picker = node;
+}
+
+// The row comes up when a selection is finished on the page, or a highlight is clicked.
+let pressed = false; // the pointer went down on the page
+document.addEventListener('mousedown', (e) => {
+  if (picker && !picker.contains(e.target)) closePicker();
+  pressed = e.button === 0 && $('page').contains(e.target);
+}, true);
+document.addEventListener('mouseup', (e) => {
+  if (!pressed || !book) return;
+  pressed = false;
+  const { clientX: x, clientY: y } = e;
+  const link = e.target.closest?.('a');
+  // (Once the selection has settled: a click on what was selected takes the selection away.)
+  setTimeout(() => {
+    if (!book || picker) return;
+    const place = chosen();
+    if (place) return openPicker(rangeOf(linesOf(rootOf(place.section)).nodes, place.start, place.end), place);
+    const light = !link && lightAt(x, y);
+    if (light) openPicker(lit.get(light.id), null, light);
+  });
+});
+$('reading').addEventListener('scroll', closePicker, { passive: true });
+window.addEventListener('blur', closePicker);
+window.addEventListener('resize', closePicker);
+
+// The notes. Each is set in the margin level with the line its highlight starts on: on the
+// right; on the left if the one above on the right is in the way; and if both are, on
+// whichever side is free sooner, as high as it can go. Where the margins are too narrow for
+// writing, a note is a dot there, which opens when it is clicked.
+const asides = new Map(); // for each note on the page, its element
+let writing = null; // the highlight whose note is being written, and so is shown though it may be empty
+let laying = 0;
+
+/** Sets the notes out afresh, once the page has settled. */
+function layNotes() {
+  cancelAnimationFrame(laying);
+  laying = requestAnimationFrame(layNow);
+}
+
+function layNow() {
+  cancelAnimationFrame(laying);
+  const shown = (book?.lights ?? []).filter((light) => (light.note || light === writing) && lit.get(light.id)?.getClientRects().length);
+  for (const [light, node] of asides) {
+    if (shown.includes(light)) continue;
+    if (light === writing) wrote(); // (its words are kept, though its place has left the page)
+    node.remove();
+    asides.delete(light);
+  }
+  if (!shown.length) return;
+  const reading = $('reading');
+  const frame = reading.getBoundingClientRect();
+  const GAP = 22; // between the text and a note
+  const EDGE = 16; // between a note and the window
+  const LINE = 18; // a note's line
+  const placed = shown.map((light) => {
+    const box = lit.get(light.id).getClientRects()[0];
+    const part = book.parts[light.section].getBoundingClientRect();
+    return { light, y: box.top - frame.top + reading.scrollTop + (box.height - LINE) / 2, left: part.left - frame.left, right: part.right - frame.left };
+  }).sort((a, b) => a.y - b.y);
+  const ends = { right: -Infinity, left: -Infinity }; // how far down each margin is taken
+  for (const { light, y, left, right } of placed) {
+    const room = Math.min(200, left - GAP - EDGE, reading.clientWidth - right - GAP - EDGE);
+    const slim = room < 120;
+    let node = asides.get(light);
+    if (!node) {
+      node = el('div', 'aside');
+      node.addEventListener('click', () => light === writing || writeNote(light));
+      asides.set(light, node);
+      $('margin').append(node);
+    }
+    if (light !== writing) node.textContent = light.note;
+    node.classList.toggle('slim', slim);
+    node.classList.toggle('writing', light === writing);
+    node.dataset.tip = slim && light !== writing ? light.note : '';
+    if (!node.dataset.tip) delete node.dataset.tip;
+    if (slim) {
+      // A dot just beyond the text; open, a card as near to it as the window allows.
+      node.classList.remove('left');
+      node.style.width = '';
+      node.style.left = (light === writing ? Math.max(8, Math.min(right + 12, reading.clientWidth - 236)) : Math.min(right + 12, reading.clientWidth - 14)) + 'px';
+      node.style.top = y + (light === writing ? -10 : 5) + 'px';
+      continue;
+    }
+    node.style.width = room + 'px';
+    const side = y >= ends.right + 8 ? 'right' : y >= ends.left + 8 ? 'left' : ends.right <= ends.left ? 'right' : 'left';
+    const top = Math.max(y, ends[side] + 8);
+    node.classList.toggle('left', side === 'left');
+    node.style.left = (side === 'right' ? right + GAP : left - GAP - room) + 'px';
+    node.style.top = top + 'px';
+    ends[side] = top + node.offsetHeight;
+  }
+}
+
+/** Opens a highlight's note for writing, in its place in the margin. */
+function writeNote(light) {
+  if (writing) wrote();
+  writing = light;
+  layNow();
+  const node = asides.get(light);
+  if (!node) return void (writing = null); // its highlight is not on the page
+  node.contentEditable = 'plaintext-only';
+  node.focus();
+  getSelection().selectAllChildren(node);
+  getSelection().collapseToEnd();
+  node.oninput = layNotes; // as it grows, those under it make way
+  node.onblur = wrote;
+  node.onkeydown = (e) => {
+    // Return or Escape finishes it (Shift-Return starts a new line).
+    if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      node.blur();
+    }
+  };
+}
+
+/** The note being written is finished: it is kept (and one left empty is no note). */
+function wrote() {
+  const light = writing;
+  const node = asides.get(light);
+  if (!light) return;
+  writing = null;
+  if (node) {
+    node.onblur = node.oninput = node.onkeydown = null;
+    node.contentEditable = 'false';
+    const words = node.textContent.trim();
+    if (words !== light.note && book?.lights.includes(light)) {
+      light.note = words;
+      keepLights();
+    }
+  }
+  layNow();
+}
+
+// The notes keep their places as the page changes shape: the text is set anew, the window
+// changes size, a section's words or pictures arrive.
+const shaped = new ResizeObserver(layNotes);
+shaped.observe($('page'));
+shaped.observe($('reading'));
+
 // While reading, the top bar and the place in the corner keep out of sight until the pointer
 // goes to where they are: the top of the window, the foot of it. The main process watches
 // the pointer and says which it is at.
@@ -1447,10 +2190,10 @@ function reveal(top, foot) {
 
 let zone = 'none'; // where the pointer is: 'top', 'foot' or 'none'
 
-/** Shows what the pointer has gone to. The bar also stays while the text panel or the
-    contents hang from it. */
+/** Shows what the pointer has gone to. The bar also stays while the text panel, the find
+    panel or the contents hang from it. */
 function settle() {
-  if (open) reveal(Boolean(panel || menu) || zone === 'top', zone === 'foot');
+  if (open) reveal(Boolean(panel || menu || finder) || zone === 'top', zone === 'foot');
 }
 
 window.api.onPointer((now) => {
@@ -1625,6 +2368,7 @@ function closePanel() {
 
 function openPanel() {
   closeMenu();
+  closeFind();
   panel = el('div', 'menu panel');
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', 'Text settings');
@@ -1670,10 +2414,17 @@ window.addEventListener('keydown', (e) => {
     choices[at < 0 ? (step > 0 ? 0 : choices.length - 1) : (at + step + choices.length) % choices.length].focus();
     return;
   }
+  // Command-F finds in what is being read.
+  if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f' && book && !dialog) {
+    e.preventDefault();
+    return openFind();
+  }
   if (e.key !== 'Escape') return;
-  if (menu) closeMenu(); // Escape closes a menu,
+  if (picker) closePicker(); // Escape puts the row of colours away,
+  else if (menu) closeMenu(); // or closes a menu,
   else if (dialog) closeDialog(); // or a dialog,
   else if (panel) closePanel(); // or the text panel,
+  else if (finder) closeFind(); // or the find panel,
   else if (open) showLibrary(); // or what is being read,
   else if (palette) (palette = null), drawShelf(); // or puts the colours away
 });

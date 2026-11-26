@@ -199,17 +199,31 @@ const Book = (() => {
 
   const probe = document.createElement('span'); // for reading a style written on an element
 
+  /** One of a book's files, read as a page. A book's pages are XHTML, which is stricter than
+      HTML; one that breaks its rules is read as HTML instead. */
+  async function pageOf(item, path) {
+    const text = await window.api.library.text(item.file, path);
+    const page = parse(text, 'application/xhtml+xml');
+    return page.querySelector('parsererror') || !page.body ? parse(text, 'text/html') : page;
+  }
+
+  // What cleaning a page keeps.
+  const CLEANING = { USE_PROFILES: { html: true, mathMl: true, svg: true }, FORBID_TAGS: BANNED, FORBID_ATTR: ['style', 'srcset', 'sizes'] };
+
+  /** One section of a book as it is searched: cleaned as `section` cleans it, so that its
+      words are exactly the page's, but kept out of the window's own document, so that none
+      of its pictures is fetched. Its names are as the book wrote them. */
+  async function text(item, book, index) {
+    return DOMPurify.sanitize((await pageOf(item, book.sections[index].path)).body, { RETURN_DOM_FRAGMENT: true, RETURN_DOM_IMPORT: false, ...CLEANING });
+  }
+
   /** One section of a book, ready for the page: cleaned, its pictures pointed at the book,
       its links marked with where they lead, and its names (ids and classes) given the
       book's prefix so they cannot be mistaken for the app's own. With it come the
       stylesheets it asks for (as paths in the book) and the styles written in its head. */
   async function section(item, book, index) {
     const { path } = book.sections[index];
-    const text = await window.api.library.text(item.file, path);
-    // A book's pages are XHTML, which is stricter than HTML; one that breaks its rules is
-    // read as HTML instead.
-    let page = parse(text, 'application/xhtml+xml');
-    if (page.querySelector('parsererror') || !page.body) page = parse(text, 'text/html');
+    const page = await pageOf(item, path);
     const address = (from) => 'book://b/' + encodeURIComponent(item.file) + '/' + follow(path, from).path.split('/').map(encodeURIComponent).join('/');
     const elsewhere = (from) => !from || /^[a-z][a-z0-9+.-]*:/i.test(from); // no address, or one outside the book
 
@@ -218,7 +232,7 @@ const Book = (() => {
     // A style written on an element is set aside under another name, to be let back in part.
     for (const styled of page.body.querySelectorAll('[style]')) styled.setAttribute('data-b-style', styled.getAttribute('style'));
 
-    const clean = DOMPurify.sanitize(page.body, { RETURN_DOM_FRAGMENT: true, USE_PROFILES: { html: true, mathMl: true, svg: true }, FORBID_TAGS: BANNED, FORBID_ATTR: ['style', 'srcset', 'sizes'] });
+    const clean = DOMPurify.sanitize(page.body, { RETURN_DOM_FRAGMENT: true, ...CLEANING });
 
     for (const picture of clean.querySelectorAll('img')) {
       if (elsewhere(picture.getAttribute('src'))) picture.remove();
@@ -255,5 +269,5 @@ const Book = (() => {
     return { content: clean, sheets, written };
   }
 
-  return { open, section, tame, BANNED };
+  return { open, section, text, tame, BANNED };
 })();
