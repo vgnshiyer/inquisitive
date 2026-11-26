@@ -24,6 +24,11 @@
   --line-mix: 15.5%; /* outlines */
   --hover-mix: 9%; /* behind what is pointed at */
   --press-mix: 14.5%; /* behind what is chosen: a step more */
+  /* In the app's own light (and the Light theme, which is its paper) those two are creams
+     in their own right, in place of the ink thinned. Elsewhere these are not set, and the
+     ink is used. */
+  --hover-fill: #ede2c9;
+  --press-fill: #e5d7b8;
   --wash: 48%; /* how much of its colour a highlight lays over the page */
   --shade: 0%; /* and how much that colour is darkened first: on a paper of middling darkness (Dusk), where a pale wash would leave the ink hard to read */
   --select: rgba(31, 111, 229, 0.36); /* behind selected text: the one colour that is not paper, ink or a collection's */
@@ -76,6 +81,8 @@
     --line-mix: 14%;
     --hover-mix: 6%;
     --press-mix: 9%;
+    --hover-fill: initial;
+    --press-fill: initial;
     --wash: 42%;
     --select: rgba(74, 144, 240, 0.42);
     --tint: 12%;
@@ -137,12 +144,12 @@
 /* And each its own amounts of ink (see the root), worked out so that on every paper what is
    pointed at stands out by the same step, what is chosen by the same larger one, quiet text
    is as easy to read, and the ink is easy to read on a highlight. */
-[data-theme='white'] { --soft-mix: 66%; --muted-mix: 53%; --line-mix: 14%; --hover-mix: 7.5%; --press-mix: 12%; --wash: 42%; }
-[data-theme='light'] { --soft-mix: 75.5%; --muted-mix: 60%; --line-mix: 15.5%; --hover-mix: 9%; --press-mix: 14.5%; --wash: 48%; }
-[data-theme='sepia'] { --soft-mix: 76%; --muted-mix: 62%; --line-mix: 16%; --hover-mix: 9.5%; --press-mix: 15%; --wash: 58%; }
-[data-theme='dusk'] { --soft-mix: 82%; --muted-mix: 58.5%; --line-mix: 12.5%; --hover-mix: 9.5%; --press-mix: 15%; --wash: 45%; --shade: 40%; --select: rgba(74, 144, 240, 0.32); }
-[data-theme='dark'] { --soft-mix: 66%; --muted-mix: 44%; --line-mix: 14%; --hover-mix: 6%; --press-mix: 9%; --wash: 42%; }
-[data-theme='black'] { --soft-mix: 66%; --muted-mix: 50%; --line-mix: 17%; --hover-mix: 9.5%; --press-mix: 13%; --wash: 40%; }
+[data-theme='white'] { --soft-mix: 66%; --muted-mix: 53%; --line-mix: 14%; --hover-mix: 7.5%; --press-mix: 12%; --wash: 42%; --hover-fill: initial; --press-fill: initial; }
+[data-theme='light'] { --soft-mix: 75.5%; --muted-mix: 60%; --line-mix: 15.5%; --hover-mix: 9%; --press-mix: 14.5%; --wash: 48%; --hover-fill: #ede2c9; --press-fill: #e5d7b8; }
+[data-theme='sepia'] { --soft-mix: 76%; --muted-mix: 62%; --line-mix: 16%; --hover-mix: 9.5%; --press-mix: 15%; --wash: 58%; --hover-fill: initial; --press-fill: initial; }
+[data-theme='dusk'] { --soft-mix: 82%; --muted-mix: 58.5%; --line-mix: 12.5%; --hover-mix: 9.5%; --press-mix: 15%; --wash: 45%; --shade: 40%; --select: rgba(74, 144, 240, 0.32); --hover-fill: initial; --press-fill: initial; }
+[data-theme='dark'] { --soft-mix: 66%; --muted-mix: 44%; --line-mix: 14%; --hover-mix: 6%; --press-mix: 9%; --wash: 42%; --hover-fill: initial; --press-fill: initial; }
+[data-theme='black'] { --soft-mix: 66%; --muted-mix: 50%; --line-mix: 17%; --hover-mix: 9.5%; --press-mix: 13%; --wash: 40%; --hover-fill: initial; --press-fill: initial; }
 
 /* The colours mixed from a paper and its ink, wherever either is given: at the root, and on
    whatever wears a theme of its own. */
@@ -151,8 +158,8 @@
   --soft: color-mix(in srgb, var(--ink) var(--soft-mix), var(--paper));
   --muted: color-mix(in srgb, var(--ink) var(--muted-mix), var(--paper));
   --line: color-mix(in srgb, var(--ink) var(--line-mix), transparent); /* the one outline colour */
-  --hover: color-mix(in srgb, var(--ink) var(--hover-mix), transparent);
-  --press: color-mix(in srgb, var(--ink) var(--press-mix), transparent);
+  --hover: var(--hover-fill, color-mix(in srgb, var(--ink) var(--hover-mix), transparent));
+  --press: var(--press-fill, color-mix(in srgb, var(--ink) var(--press-mix), transparent));
 }
 
 /* How light a turned-over page's marks are: about the theme's ink. */
