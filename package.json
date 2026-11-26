@@ -6,9 +6,11 @@
   "description": "A personal library for PDFs, books and articles.",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "package": "electron-packager . Inquisitive --platform=darwin --arch=arm64 --icon=assets/icon.icns --app-bundle-id=me.vgnshiyer.inquisitive --out=dist --overwrite --ignore='^/design' --ignore='^/dist' && codesign --force --deep --sign - dist/Inquisitive-darwin-arm64/Inquisitive.app"
   },
   "devDependencies": {
+    "@electron/packager": "^20.3.0",
     "electron": "^45.5.0"
   },
   "dependencies": {
