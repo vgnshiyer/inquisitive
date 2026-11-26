@@ -1,3 +1,14 @@
+/* The paper and the ink are colours in their own right, so that they can change by degrees.
+   When the theme changes it is these that change, once, at the root; everything drawn in
+   them (the window, the top bar, a PDF's sheets, the text) reads them as they go, and so is
+   always the same colour as everything else. Nothing has a fade of its own to fall out of
+   step with. */
+@property --paper { syntax: '<color>'; inherits: true; initial-value: #f5f1e8; }
+@property --ink { syntax: '<color>'; inherits: true; initial-value: #2a2622; }
+@property --raised { syntax: '<color>'; inherits: true; initial-value: #fbf9f4; }
+@property --leaf-light { syntax: '<number>'; inherits: true; initial-value: 0.9; }
+@property --leaf-opacity { syntax: '<number>'; inherits: true; initial-value: 1; }
+
 :root {
   /* Colours: warm paper and ink. Everything else is mixed from these. */
   --paper: #f5f1e8;
@@ -30,11 +41,11 @@
   --card-pad: 16px;
   --card-line: 14%; /* how strong a card's outline is */
   --card-lift: 3px; /* how far a card rises when pointed at */
-  --font-serif: 'Literata Variable', 'New York', ui-serif, Georgia, serif; /* the reader's other face */
-  --read-font: var(--font); /* the face of what is being read: --font or --font-serif */
-  --read-size: 17px; /* and its size */
-  --read-leading: 1.7; /* its line height */
-  --read-width: 620px; /* the widest its column gets */
+  /* Whether the paper is a light one or a dark one, which decides how a PDF's page is laid on
+     it (see .leaf), and how light the page's marks are on a dark one: about the ink. */
+  --tone: light;
+  --leaf-light: 0.9;
+  transition: --paper var(--slide), --ink var(--slide), --raised var(--slide), --leaf-light var(--slide);
 
   color-scheme: light;
 }
@@ -48,6 +59,7 @@
     --shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
     --shadow-small: 0 4px 16px rgba(0, 0, 0, 0.45);
     --danger: #e8907c;
+    --tone: dark;
     color-scheme: dark;
   }
 }
@@ -62,12 +74,11 @@
 [data-theme='dark'] { --paper: #181613; --ink: #ece6da; }
 [data-theme='black'] { --paper: #000000; --ink: #cfc9bd; }
 
-/* While one theme gives way to another, everything changes colour together and at the same
-   pace (app.js marks the root for as long as it takes). */
-:root.theming *,
-:root.theming *::before,
-:root.theming *::after {
-  transition: background-color var(--slide), color var(--slide), border-color var(--slide), outline-color var(--slide), box-shadow var(--slide) !important;
+/* The things that change colour quickly when pointed at would chase a paper and ink that are
+   themselves changing, and trail behind them. While a theme gives way to another (app.js
+   marks the root for as long as it takes) they keep step instead. */
+:root.theming :is(.tool, .tab, .card, .begin-add, .pill, .sort, .dot, .seg button, .band-grip, .band-dot, .swatch, .band-bin, .band-new) {
+  transition: none !important;
 }
 
 /* What goes with a light paper, and with a dark one: as in the app's two. */
@@ -79,6 +90,7 @@
   --shadow: 0 10px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06);
   --shadow-small: 0 4px 14px rgba(0, 0, 0, 0.1);
   --danger: #b8442f;
+  --tone: light;
   color-scheme: light;
 }
 
@@ -90,8 +102,14 @@
   --shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-small: 0 4px 16px rgba(0, 0, 0, 0.45);
   --danger: #e8907c;
+  --tone: dark;
+  --leaf-light: 0.9;
   color-scheme: dark;
 }
+
+/* How light a turned-over page's marks are: about the theme's ink. */
+[data-theme='dusk'] { --leaf-light: 0.69; }
+[data-theme='black'] { --leaf-light: 0.8; }
 
 * {
   box-sizing: border-box;
@@ -115,7 +133,6 @@ body {
   grid-template-rows: 44px minmax(0, 1fr);
   background: var(--paper);
   color: var(--ink);
-  transition: background-color var(--slide); /* the reader's paper comes in as the rail goes */
   font: 400 var(--text-size) / 1.4 var(--font);
   letter-spacing: -0.01em;
   cursor: default;
@@ -169,6 +186,10 @@ button:not(:disabled) {
   background: transparent;
   color: var(--soft);
   transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.tool[hidden] {
+  display: none;
 }
 
 .tool:hover,
@@ -763,6 +784,14 @@ h1 {
   font-size: var(--text-size);
 }
 
+/* A long one is only so tall, and scrolls. */
+.menu.long {
+  max-height: min(374px, calc(100vh - 64px));
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink) 20%, transparent) transparent;
+}
+
 .menu-label {
   padding: 6px 7px 3px;
   color: var(--muted);
@@ -812,6 +841,21 @@ h1 {
 .menu-item.danger:hover,
 .menu-item.danger:focus-visible {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+/* A number before a name, as a chapter has: set to the right, so the names line up. */
+.menu-lead {
+  flex: none;
+  min-width: 2ch;
+  color: color-mix(in srgb, currentColor 60%, transparent);
+  font-family: var(--font-mono);
+  font-size: calc(var(--text-size) - 2px);
+  letter-spacing: 0;
+  text-align: right;
+}
+
+.menu-item.on .menu-lead {
+  color: color-mix(in srgb, currentColor 78%, transparent);
 }
 
 .menu-name {
@@ -1220,6 +1264,83 @@ body.dragging * {
 #page h2 + .text,
 #page .byline + .text {
   margin-top: 36px;
+}
+
+/* A PDF: its pages as sheets, one under another. A sheet is a piece of the theme's paper, and
+   on it lies the page itself (the leaf), drawn black on white. On a light paper the leaf is
+   laid over the paper, so its white takes the paper's colour. On a dark one (app.js marks
+   the root) it is turned over, white for black, its colours turned back toward what they
+   were, dimmed to about the ink, and laid on so that its black is the paper. Either way the
+   blank of the page is exactly the paper, whatever the paper is at that moment. */
+#page.sheets {
+  max-width: calc(var(--sheet-width) + 80px);
+  padding-top: 64px;
+  user-select: none;
+}
+
+.sheet {
+  position: relative;
+  aspect-ratio: 8.5 / 11;
+  margin: 0 0 18px;
+  overflow: hidden;
+  isolation: isolate; /* the leaf is laid over this paper and nothing behind it */
+  content-visibility: auto; /* only the pages in sight are drawn, however many there are */
+  border-radius: 3px;
+  background: var(--paper);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 17%, transparent); /* its edge, now that it is the paper's colour */
+}
+
+.leaf {
+  position: absolute;
+  inset: 0;
+  container-type: inline-size; /* its marks are measured against its own width */
+  padding: 11% 12% 0;
+  background: #fff;
+  mix-blend-mode: multiply;
+  opacity: var(--leaf-opacity);
+}
+
+:root[data-tone='dark'] .leaf {
+  filter: invert(1) hue-rotate(180deg) brightness(var(--leaf-light));
+  mix-blend-mode: screen;
+}
+
+/* Until there is a reader, bars stand where a page's lines would be. */
+.sheet .ink,
+.sheet .figure {
+  display: block;
+  height: 1.15cqw;
+  margin-bottom: 1.75cqw;
+  border-radius: 1cqw;
+  background: rgb(30 27 24 / 0.13);
+}
+
+.sheet .ink.gap {
+  margin-bottom: 4.4cqw;
+}
+
+.sheet .ink.big {
+  height: 2.8cqw;
+  margin-bottom: 3cqw;
+  background: rgb(30 27 24 / 0.32);
+}
+
+.sheet .figure {
+  height: 24cqw;
+  margin: 0 9% 4.4cqw;
+  border-radius: 0.6cqw;
+  background: rgb(30 27 24 / 0.07);
+}
+
+.sheet .folio {
+  position: absolute;
+  right: 0;
+  bottom: 4.6cqw;
+  left: 0;
+  color: rgb(30 27 24 / 0.5);
+  font: 400 1.5cqw / 1 var(--font-mono);
+  letter-spacing: 0;
+  text-align: center;
 }
 
 /* How far through you are, in the corner. Like the top bar it is out of sight until the

@@ -3,15 +3,23 @@
 // The layout only: a rail of tabs, the library beside it, and a page that takes the window
 // when something is opened. There is no real library or reader yet, so the shelf is stocked
 // with stand-ins.
+// The stand-in books' chapters, for the reader's contents.
+const CHAPTERS = {
+  geb: ['The MU-puzzle', 'Meaning and Form in Mathematics', 'Figure and Ground', 'Consistency, Completeness, and Geometry', 'Recursive Structures and Processes', 'The Location of Meaning', 'The Propositional Calculus', 'Typographical Number Theory', 'Mumon and Gödel', 'Levels of Description, and Computer Systems', 'Brains and Thoughts', 'Minds and Thoughts', 'BlooP and FlooP and GlooP', 'On Formally Undecidable Propositions of TNT and Related Systems', 'Jumping out of the System', 'Self-Ref and Self-Rep', 'Church, Turing, Tarski, and Others', 'Artificial Intelligence: Retrospects', 'Artificial Intelligence: Prospects', 'Strange Loops, Or Tangled Hierarchies'],
+  state: ['Nature and Space', 'Cities, People, and Language', 'Authoritarian High Modernism', 'The High-Modernist City', 'The Revolutionary Party', 'Soviet Collectivization, Capitalist Dreams', 'Compulsory Villagization in Tanzania', 'Taming Nature', 'Thin Simplifications and Practical Knowledge', 'Conclusion'],
+  gene: ['Why Are People?', 'The Replicators', 'Immortal Coils', 'The Gene Machine', 'Aggression: Stability and the Selfish Machine', 'Genesmanship', 'Family Planning', 'Battle of the Generations', 'Battle of the Sexes', 'You Scratch My Back, I’ll Ride on Yours', 'Memes: The New Replicators', 'Nice Guys Finish First', 'The Long Reach of the Gene'],
+  hamming: ['Orientation', 'Foundations of the Digital Revolution', 'History of Computers: Hardware', 'History of Computers: Software', 'History of Computer Applications', 'Limits of Computer Applications: AI I', 'Artificial Intelligence II', 'Artificial Intelligence III', 'n-Dimensional Space', 'Coding Theory I', 'Coding Theory II', 'Error-Correcting Codes', 'Information Theory', 'Digital Filters I', 'Digital Filters II', 'Digital Filters III', 'Digital Filters IV', 'Simulation I', 'Simulation II', 'Simulation III', 'Fiber Optics', 'Computer-Aided Instruction', 'Mathematics', 'Quantum Mechanics', 'Creativity', 'Experts', 'Unreliable Data', 'Systems Engineering', 'You Get What You Measure', 'You and Your Research'],
+};
+// The stand-in items. A book also has its chapters, and the one it is open at.
 const SAMPLE = [
-  { id: 'geb', kind: 'book', title: 'Gödel, Escher, Bach', author: 'Douglas Hofstadter', pages: 777, progress: 0.34, added: 40, opened: 0, collection: 'math', chapter: [7, 20, 'The Propositional Calculus'] },
+  { id: 'geb', kind: 'book', title: 'Gödel, Escher, Bach', author: 'Douglas Hofstadter', pages: 777, progress: 0.34, added: 40, opened: 0, collection: 'math', chapters: CHAPTERS.geb, chapter: 7 },
   { id: 'shannon', kind: 'pdf', title: 'A Mathematical Theory of Communication', author: 'Claude Shannon', pages: 55, progress: 0.12, added: 12, opened: 3, collection: 'math' },
   { id: 'research', kind: 'article', title: 'You and Your Research', author: 'Richard Hamming', minutes: 45, progress: 1, added: 30, opened: 20, finished: 20, collection: 'science' },
-  { id: 'state', kind: 'book', title: 'Seeing Like a State', author: 'James C. Scott', pages: 445, progress: 0, added: 2, collection: 'society', chapter: [1, 10, 'Nature and Space'] },
+  { id: 'state', kind: 'book', title: 'Seeing Like a State', author: 'James C. Scott', pages: 445, progress: 0, added: 2, collection: 'society', chapters: CHAPTERS.state, chapter: 1 },
   { id: 'bitter', kind: 'article', title: 'The Bitter Lesson', author: 'Rich Sutton', minutes: 6, progress: 1, added: 9, opened: 9, finished: 9, collection: 'computing' },
-  { id: 'gene', kind: 'book', title: 'The Selfish Gene', author: 'Richard Dawkins', pages: 360, progress: 0.61, added: 25, opened: 1, collection: 'science', chapter: [8, 13, 'Battle of the Generations'] },
+  { id: 'gene', kind: 'book', title: 'The Selfish Gene', author: 'Richard Dawkins', pages: 360, progress: 0.61, added: 25, opened: 1, collection: 'science', chapters: CHAPTERS.gene, chapter: 8 },
   { id: 'attention', kind: 'pdf', title: 'Attention Is All You Need', author: 'Ashish Vaswani and others', pages: 15, progress: 0, added: 1, collection: 'computing' },
-  { id: 'hamming', kind: 'book', title: 'The Art of Doing Science and Engineering', author: 'Richard Hamming', pages: 376, progress: 0.08, added: 5, opened: 6, chapter: [3, 30, 'History of Computers: Hardware'] }, // in no collection
+  { id: 'hamming', kind: 'book', title: 'The Art of Doing Science and Engineering', author: 'Richard Hamming', pages: 376, progress: 0.08, added: 5, opened: 6, chapters: CHAPTERS.hamming, chapter: 3 }, // in no collection
 ];
 
 const KINDS = { book: 'Book', pdf: 'PDF', article: 'Article' };
@@ -152,16 +160,20 @@ function closeMenu() {
   if (!menu) return;
   menu.node.remove();
   menu.owner?.setAttribute('aria-expanded', 'false');
+  if (menu.owner?.matches('.tool')) menu.owner.dataset.tip = menu.owner.getAttribute('aria-label'); // its tip was put away
   menu = null;
+  settle();
 }
 
 /** Open a menu. Of its entries, a string is a group's label, null is a dividing line, and
     the rest are things to choose: { name, run } with, if wanted, an icon, a collection's
-    colour (hue; null for none), on (it is the current choice), tick, or danger. `at` is a
-    button to hang the menu from, or the point { x, y } to open it at. */
-function openMenu(entries, at) {
+    colour (hue; null for none), a lead (a number before the name), on (it is the current
+    choice), tick, or danger. `at` is a button to hang the menu from, or the point { x, y }
+    to open it at. A long menu is only so tall, and scrolls, opening at the current choice. */
+function openMenu(entries, at, long) {
   closeMenu();
-  const node = el('div', 'menu');
+  closePanel();
+  const node = el('div', long ? 'menu long' : 'menu');
   node.setAttribute('role', 'menu');
   for (const entry of entries) {
     if (entry === null) {
@@ -185,6 +197,7 @@ function openMenu(entries, at) {
         if (entry.hue !== null) dot.dataset.hue = entry.hue;
         item.append(dot);
       }
+      if (entry.lead) item.append(el('span', 'menu-lead', entry.lead));
       item.append(el('span', 'menu-name', entry.name));
       if (entry.tick) item.append(icon('tick', 'menu-icon'));
       item.addEventListener('click', () => {
@@ -204,7 +217,10 @@ function openMenu(entries, at) {
   node.style.left = Math.max(8, Math.min(x, innerWidth - box.width - 8)) + 'px';
   node.style.top = Math.max(8, Math.min(y, innerHeight - box.height - 8)) + 'px';
   owner?.setAttribute('aria-expanded', 'true');
+  const on = long && node.querySelector('.on');
+  if (on) node.scrollTop = on.offsetTop - (node.clientHeight - on.offsetHeight) / 2;
   menu = { node, owner };
+  settle();
 }
 
 // A press anywhere else closes the menu (a press on its own button is left to that button).
@@ -213,7 +229,9 @@ document.addEventListener('mousedown', (e) => {
 }, true);
 window.addEventListener('blur', closeMenu);
 window.addEventListener('resize', closeMenu);
-document.addEventListener('scroll', closeMenu, true);
+document.addEventListener('scroll', (e) => {
+  if (!menu?.node.contains(e.target)) closeMenu(); // a long menu's own scrolling aside
+}, true);
 
 // ---------- the path in the top bar ----------
 
@@ -752,12 +770,49 @@ const TEXT = [
   'That is the end of the stand-in text.',
 ];
 
-/** Opens an item: a book at its chapter, anything else under its own title and author. */
+/** A stand-in for one page of a PDF: a sheet, and on it a leaf drawn as the PDF would draw it,
+    black on white (style.css gives it the theme's paper and ink): bars where its lines would
+    be, here and there a box where a figure would be, and its number at the foot. The first
+    has a title. */
+function sheet(number) {
+  const sheet = el('div', 'sheet');
+  const made = el('div', 'leaf');
+  sheet.append(made);
+  const bar = (width, kind) => {
+    const line = el('span', kind ? 'ink ' + kind : 'ink');
+    line.style.width = width + '%';
+    return line;
+  };
+  let seed = number * 7 + 3; // the same page is always the same shape
+  const next = () => (seed = (seed * 73 + 41) % 101);
+  const figure = number % 3 === 2;
+  if (number === 1) made.append(bar(72, 'big'), bar(30, 'gap'));
+  for (let paragraph = 0; paragraph < (figure || number === 1 ? 5 : 7); paragraph++) {
+    const lines = 4 + (next() % 3);
+    for (let i = 0; i < lines; i++) made.append(i < lines - 1 ? bar(100) : bar(30 + (next() % 55), 'gap'));
+    if (figure && paragraph === 1) made.append(el('span', 'figure'));
+  }
+  made.append(el('span', 'folio', String(number)));
+  return sheet;
+}
+
+/** Sets out the page of what is open. A PDF is its own pages, as sheets one under another. A
+    book opens at its chapter, an article under its title and author; both have the same
+    words, for now. */
+function drawPage() {
+  const item = open;
+  const pdf = item.kind === 'pdf';
+  $('page').className = pdf ? 'sheets' : '';
+  $('reading').scrollTop = 0;
+  if (pdf) return $('page').replaceChildren(...Array.from({ length: item.pages }, (_, i) => sheet(i + 1)));
+  const head = item.chapters ? [el('p', 'over', 'Chapter ' + item.chapter), el('h2', '', item.chapters[item.chapter - 1])] : [el('h2', '', item.title), el('p', 'byline', item.author)];
+  $('page').replaceChildren(...head, ...TEXT.map((words) => el('p', 'text', words)));
+}
+
 function read(item) {
   open = item;
-  const head = item.chapter ? [el('p', 'over', 'Chapter ' + item.chapter[0]), el('h2', '', item.chapter[2])] : [el('h2', '', item.title), el('p', 'byline', item.author)];
-  $('page').replaceChildren(...head, ...TEXT.map((words) => el('p', 'text', words)));
   $('place').textContent = Math.round(item.progress * 100) + '%';
+  contentsTool.hidden = !item.chapters; // only what has chapters has contents
   wear();
   zone = 'none';
   reveal(false, false);
@@ -765,9 +820,30 @@ function read(item) {
   document.body.dataset.screen = 'reading';
   $('library').hidden = true;
   $('reading').hidden = false;
-  $('reading').scrollTop = 0;
+  drawPage();
   drawCrumbs();
 }
+
+// The contents: a book's chapters, in a menu hung from the top bar's contents button, open at
+// the chapter being read. Choosing one goes to it.
+const contentsTool = document.querySelector('[data-tool="contents"]');
+
+contentsTool.addEventListener('click', () => {
+  if (menu?.owner === contentsTool) return closeMenu();
+  const chapters = open.chapters.map((name, i) => ({
+    lead: String(i + 1),
+    name,
+    on: i + 1 === open.chapter,
+    run: () => {
+      open.chapter = i + 1;
+      drawPage();
+      $('page').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease' }); // it arrives as a page does
+    },
+  }));
+  delete contentsTool.dataset.tip; // open, the menu says what the button is for
+  hideTip();
+  openMenu(chapters, contentsTool, true);
+});
 
 // While reading, the top bar and the place in the corner keep out of sight until the pointer
 // goes to where they are: the top of the window, the foot of it. The main process watches
@@ -784,9 +860,10 @@ function reveal(top, foot) {
 
 let zone = 'none'; // where the pointer is: 'top', 'foot' or 'none'
 
-/** Shows what the pointer has gone to. The bar also stays while the text panel hangs from it. */
+/** Shows what the pointer has gone to. The bar also stays while the text panel or the
+    contents hang from it. */
 function settle() {
-  if (open) reveal(Boolean(panel) || zone === 'top', zone === 'foot');
+  if (open) reveal(Boolean(panel || menu) || zone === 'top', zone === 'foot');
 }
 
 window.api.onPointer((now) => {
@@ -804,7 +881,7 @@ const THEMES = [['white', 'White'], ['light', 'Light'], ['sepia', 'Sepia'], ['du
 const FACES = [['sans', 'Sans', 'var(--font)'], ['serif', 'Serif', 'var(--font-serif)']];
 const SIZE = { least: 14, most: 24 };
 const SPACINGS = [['tight', 'Tight', 1.5], ['normal', 'Normal', 1.7], ['loose', 'Loose', 1.9]];
-const WIDTHS = [['narrow', 'Narrow', 540], ['normal', 'Normal', 620], ['wide', 'Wide', 720]];
+const WIDTHS = [['narrow', 'Narrow', 540, 620], ['normal', 'Normal', 620, 760], ['wide', 'Wide', 720, 920]]; // a column of text, then a PDF's sheet
 const setting = { theme: null, face: 'sans', size: 17, spacing: 'normal', width: 'normal' };
 try {
   Object.assign(setting, JSON.parse(localStorage.getItem('text')));
@@ -815,9 +892,48 @@ try {
 /** The window wears the reader's theme while something is being read, and the app's own
     colours otherwise. */
 function wear() {
-  if (open && THEMES.some(([id]) => id === setting.theme)) document.documentElement.dataset.theme = setting.theme;
-  else delete document.documentElement.dataset.theme;
+  const root = document.documentElement;
+  const theme = open && THEMES.some(([id]) => id === setting.theme) ? setting.theme : null;
+  if (theme !== (root.dataset.theme ?? null)) {
+    // The paper and ink now change by degrees (style.css); what has a quick fade of its own
+    // keeps step with them for as long as that takes.
+    root.classList.add('theming');
+    clearTimeout(theming);
+    theming = setTimeout(() => root.classList.remove('theming'), 320);
+    if (theme) root.dataset.theme = theme;
+    else delete root.dataset.theme;
+  }
+  turn();
 }
+
+let tone = ''; // the paper now worn is a 'light' one or a 'dark' one
+let turning = null; // a PDF's pages are being turned over for the other
+
+/** Marks the root with whether the paper is light or dark, which is how a PDF's pages know
+    which way up to lie. A page cannot be turned by degrees, so if one is in sight its marks
+    fade out, it is turned while they are gone, and they fade back. The blank of the page is
+    the paper throughout. */
+function turn() {
+  const root = document.documentElement;
+  const now = getComputedStyle(root).getPropertyValue('--tone').trim() || 'light';
+  if (now === tone) return;
+  const first = !tone;
+  tone = now;
+  turning?.cancel();
+  turning = null;
+  const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (first || still || open?.kind !== 'pdf' || $('reading').hidden) return void (root.dataset.tone = now);
+  const out = (turning = root.animate({ '--leaf-opacity': [1, 0] }, { duration: 100, fill: 'forwards' }));
+  out.finished.then(() => {
+    if (turning !== out) return;
+    root.dataset.tone = now;
+    out.cancel();
+    turning = root.animate({ '--leaf-opacity': [0, 1] }, { duration: 120 });
+  }, () => {});
+}
+
+// The app's own light and dark follow the system, which can change while the app is open.
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', wear);
 
 /** Sets the text as `setting` says. What was being read stays where it was in the window. */
 function setText() {
@@ -828,14 +944,16 @@ function setText() {
   root.setProperty('--read-font', (FACES.find(([id]) => id === setting.face) ?? FACES[0])[2]);
   root.setProperty('--read-size', setting.size + 'px');
   root.setProperty('--read-leading', (SPACINGS.find(([id]) => id === setting.spacing) ?? SPACINGS[1])[2]);
-  root.setProperty('--read-width', (WIDTHS.find(([id]) => id === setting.width) ?? WIDTHS[1])[2] + 'px');
+  const width = WIDTHS.find(([id]) => id === setting.width) ?? WIDTHS[1];
+  root.setProperty('--read-width', width[2] + 'px');
+  root.setProperty('--sheet-width', width[3] + 'px');
   reading.scrollTop = at * room();
   wear();
   localStorage.setItem('text', JSON.stringify(setting));
 }
 
 let panel = null; // the text panel, when it is open
-let theming = 0; // the wait until a change of theme is over
+let theming = 0; // the wait until a change of theme is over (see wear)
 const textTool = document.querySelector('[data-tool="text"]');
 
 /** What the panel holds: the themes, a dot for each; the face, each choice written in itself; the size, stepped down or
@@ -867,6 +985,7 @@ function drawPanel() {
     return made;
   };
   const held = panel.contains(document.activeElement) ? [...panel.querySelectorAll('button')].indexOf(document.activeElement) : -1;
+  const keep = () => held >= 0 && panel.querySelectorAll('button')[held]?.focus(); // the keyboard keeps its place
   const faces = FACES.map(([id, label, family]) => {
     const made = choice(label, setting.face === id, () => (setting.face = id));
     made.style.fontFamily = family;
@@ -885,24 +1004,24 @@ function drawPanel() {
     made.setAttribute('aria-pressed', String(worn === id));
     made.addEventListener('click', () => {
       setting.theme = id;
-      const root = document.documentElement;
-      root.classList.add('theming');
-      clearTimeout(theming);
-      theming = setTimeout(() => root.classList.remove('theming'), 300);
       setText();
       for (const dot of dots) dot.setAttribute('aria-pressed', String(dot === made));
       panel.querySelector('.panel-head span:last-child').textContent = name;
     });
     return made;
   });
+  const theme = group('Theme', THEMES.find(([id]) => id === worn)[1], dots, 'dots');
+  const width = group('Width', null, WIDTHS.map(([id, label]) => choice(label, setting.width === id, () => (setting.width = id))));
+  // A PDF's pages are set already: only the theme around them and their width can change.
+  if (open?.kind === 'pdf') return panel.replaceChildren(...theme, ...width), keep();
   panel.replaceChildren(
-    ...group('Theme', THEMES.find(([id]) => id === worn)[1], dots, 'dots'),
+    ...theme,
     ...group('Typeface', null, faces),
     ...group('Size', setting.size, [step(-1, 'Smaller text', 'seg-small'), step(1, 'Larger text', 'seg-large')]),
     ...group('Spacing', null, SPACINGS.map(([id, label]) => choice(label, setting.spacing === id, () => (setting.spacing = id)))),
-    ...group('Width', null, WIDTHS.map(([id, label]) => choice(label, setting.width === id, () => (setting.width = id)))),
+    ...width,
   );
-  if (held >= 0) panel.querySelectorAll('button')[held].focus(); // the keyboard keeps its place
+  keep();
 }
 
 function closePanel() {
@@ -915,6 +1034,7 @@ function closePanel() {
 }
 
 function openPanel() {
+  closeMenu();
   panel = el('div', 'menu panel');
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', 'Text settings');
