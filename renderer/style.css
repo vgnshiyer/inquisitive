@@ -375,16 +375,30 @@ body[data-rail='wide'] .tab-name {
 .tab[data-tab='library'] .icon { mask-image: url(icons/book-minimalistic-linear.svg); }
 .tab[data-tab='finished'] .icon { mask-image: url(icons/check-circle-linear.svg); }
 .tab[data-tab='collections'] .icon { mask-image: url(icons/library-linear.svg); }
-.tab[data-tab='settings'] .icon { mask-image: url(icons/settings-linear.svg); }
 
 .tab[data-tab='home'][aria-current='true'] .icon { mask-image: url(icons/home-2-bold.svg); }
 .tab[data-tab='library'][aria-current='true'] .icon { mask-image: url(icons/book-minimalistic-bold.svg); }
 .tab[data-tab='finished'][aria-current='true'] .icon { mask-image: url(icons/check-circle-bold.svg); }
 .tab[data-tab='collections'][aria-current='true'] .icon { mask-image: url(icons/library-bold.svg); }
-.tab[data-tab='settings'][aria-current='true'] .icon { mask-image: url(icons/settings-bold.svg); }
 
 .tab.foot {
   margin-top: auto;
+}
+
+/* Settings' icon is the app's own mark, the asterisk of its name: a letter, not a drawing, so
+   it is set as text where the icon would be (in the opening's face: opening.css). Its arms
+   stand a little under the middle of its line, which the nudge upward makes up. It has one
+   form: in Settings, the tab's wash and darker ink say so. */
+.tab[data-tab='settings'] .icon {
+  position: relative;
+  top: -0.026em;
+  background: none;
+  -webkit-mask: none;
+  mask: none;
+  font: 700 34px / 1 'Fraunces Logo', var(--font-title);
+  font-optical-sizing: none;
+  font-variation-settings: 'opsz' 144, 'SOFT' 100, 'WONK' 0;
+  text-align: center;
 }
 
 .count {
@@ -1515,10 +1529,33 @@ body > main[hidden] {
   mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
 }
 
+/* The page's foot: the logo, muted, and the version beside it on the same line. The logo's
+   word and its asterisk are set as the opening sets them (opening.css has the face); the
+   version, as the app's other numbers are. */
 .set-foot {
   margin: 0;
   color: var(--muted);
-  font-size: calc(var(--text-size) - 1px);
+  font: 400 19px / 1 'Fraunces Logo', var(--font-title);
+  font-optical-sizing: none;
+  font-variation-settings: 'opsz' 144, 'SOFT' 100, 'WONK' 0;
+  white-space: nowrap;
+}
+
+.set-foot .star {
+  display: inline-block;
+  position: relative;
+  top: -0.12em;
+  margin-left: 0.04em;
+  font-size: 0.62em;
+  font-weight: 700;
+  vertical-align: top;
+}
+
+.set-foot .version {
+  margin-left: 8px;
+  font: 400 12px / 1 var(--font-mono);
+  font-variation-settings: normal;
+  letter-spacing: 0;
 }
 
 /* The text panel: a menu's surface, holding rows of choices in place of a list. Each row is

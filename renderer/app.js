@@ -3057,6 +3057,11 @@ function settings() {
   const size = el('div', 'seg');
   size.append(step(-1, 'Smaller text', 'seg-small'), step(1, 'Larger text', 'seg-large'));
 
+  // The page's foot: the app's name as its logo has it, asterisk and all, and the version
+  // beside it.
+  const foot = el('p', 'set-foot');
+  foot.append('inquisitive', el('span', 'star', '*'), el('span', 'version', about?.version ?? ''));
+
   const page = el('div', 'settings');
   page.append(
     part(
@@ -3083,7 +3088,7 @@ function settings() {
       row('Books', text('reading', READINGS)),
       row('Articles', text('readingArticles', READINGS)),
     ),
-    el('p', 'set-foot', about ? 'Inquisitive ' + about.version : ''),
+    foot,
   );
   sync();
   settled = sync;
