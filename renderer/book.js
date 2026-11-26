@@ -37,8 +37,9 @@ const Book = (() => {
   const words = (node) => node?.textContent.replace(/\s+/g, ' ').trim() ?? '';
 
   /** A book's shape: its title and author, its sections in reading order (each a path and a
-      size), and its contents (each a title, the section it is in, the place within it if it
-      names one, and how deep it is nested). */
+      size), its contents (each a title, the section it is in, the place within it if it
+      names one, and how deep it is nested), and the paths of what it keeps aside from its
+      reading order. */
   async function open(item) {
     const text = (path) => window.api.library.text(item.file, path);
     const root = all(parse(await text('META-INF/container.xml')), 'rootfile')[0].getAttribute('full-path');
@@ -55,6 +56,12 @@ const Book = (() => {
       .filter(Boolean)
       .map((file) => ({ path: file.path, size: sizes[file.path] || 1 }));
     if (!sections.length) throw new Error('a book with nothing in it');
+    // What the book keeps out of its reading order: most often its notes, each shown where
+    // its number is (app.js).
+    const aside = all(pack, 'itemref')
+      .filter((ref) => ref.getAttribute('linear') === 'no')
+      .map((ref) => files.get(ref.getAttribute('idref'))?.path)
+      .filter(Boolean);
     const where = (path) => sections.findIndex((section) => section.path === path);
 
     // The contents: the newer kind of list (a page of nested links) if the book has one,
@@ -94,7 +101,7 @@ const Book = (() => {
       if (map) walk(map, 0);
     }
 
-    return { title: words(all(pack, 'title')[0]), author: all(pack, 'creator').map(words).filter(Boolean).join(', '), sections, toc };
+    return { title: words(all(pack, 'title')[0]), author: all(pack, 'creator').map(words).filter(Boolean).join(', '), sections, toc, aside };
   }
 
   // What a book's page may not bring with it: anything that runs, frames another page, or
@@ -217,12 +224,11 @@ const Book = (() => {
     return DOMPurify.sanitize((await pageOf(item, book.sections[index].path)).body, { RETURN_DOM_FRAGMENT: true, RETURN_DOM_IMPORT: false, ...CLEANING });
   }
 
-  /** One section of a book, ready for the page: cleaned, its pictures pointed at the book,
-      its links marked with where they lead, and its names (ids and classes) given the
+  /** One of a book's files, ready for the page: cleaned, its pictures pointed at the book,
+      its links marked with where they lead (and those to notes as such), and its names (ids and classes) given the
       book's prefix so they cannot be mistaken for the app's own. With it come the
       stylesheets it asks for (as paths in the book) and the styles written in its head. */
-  async function section(item, book, index) {
-    const { path } = book.sections[index];
+  async function piece(item, path) {
     const page = await pageOf(item, path);
     const address = (from) => 'book://b/' + encodeURIComponent(item.file) + '/' + follow(path, from).path.split('/').map(encodeURIComponent).join('/');
     const elsewhere = (from) => !from || /^[a-z][a-z0-9+.-]*:/i.test(from); // no address, or one outside the book
@@ -231,6 +237,13 @@ const Book = (() => {
     const written = [...page.querySelectorAll('style')].map((style) => style.textContent).join('\n');
     // A style written on an element is set aside under another name, to be let back in part.
     for (const styled of page.body.querySelectorAll('[style]')) styled.setAttribute('data-b-style', styled.getAttribute('style'));
+    // A link the book itself calls a note's number is marked as one (what it calls things
+    // does not outlast the cleaning).
+    for (const link of page.body.querySelectorAll('a[href]')) {
+      const called = [link.getAttribute('epub:type'), link.getAttributeNS('http://www.idpf.org/2007/ops', 'type'), link.getAttribute('role')].join(' ');
+      if (/\bnoteref\b/.test(called)) link.setAttribute('data-b-note', '');
+      else link.removeAttribute('data-b-note');
+    }
 
     const clean = DOMPurify.sanitize(page.body, { RETURN_DOM_FRAGMENT: true, ...CLEANING });
 
@@ -269,5 +282,8 @@ const Book = (() => {
     return { content: clean, sheets, written };
   }
 
-  return { open, section, text, tame, BANNED };
+  /** One section of a book, ready for the page. */
+  const section = (item, book, index) => piece(item, book.sections[index].path);
+
+  return { open, section, piece, text, tame, BANNED };
 })();

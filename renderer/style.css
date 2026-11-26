@@ -1380,6 +1380,147 @@ body > main[hidden] {
   white-space: pre-line;
 }
 
+/* Settings: a page as wide as any other, in parts, each under its name and a rule as a
+   shelf is. A part's rows stand in two columns where there is room, as cards do. Each row is
+   a name, with a line more about it where that helps, and its control at the right: the text
+   panel's own strips and dots, all one width, so that they stand in a line. */
+.set {
+  margin: 0 0 40px;
+}
+
+.set-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 8px;
+  font-size: calc(var(--text-size) + 1px);
+  font-weight: 500;
+}
+
+.set-head::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  margin-left: 6px;
+  background: var(--line);
+}
+
+.set-lead {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 1px);
+}
+
+.set-rows {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr));
+  align-items: start;
+  column-gap: 72px;
+}
+
+/* The name and the control share a line, so that across the two columns they stand level;
+   what more there is to say goes under the name. */
+.set-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 24px;
+  padding: 8px 0;
+}
+
+.set-name {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+}
+
+.set-row > :last-child {
+  grid-area: 1 / 2;
+}
+
+.set-value {
+  margin-left: 8px;
+  color: var(--muted);
+}
+
+.set-number {
+  font-family: var(--font-mono);
+  font-size: calc(var(--text-size) - 1px);
+  letter-spacing: 0;
+}
+
+.set-more {
+  grid-area: 2 / 1 / auto / -1;
+  margin-top: -3px;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 1px);
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.set-row > .seg,
+.set-row > .dots {
+  flex: none;
+  width: 240px;
+  margin: 0;
+}
+
+.set-button {
+  flex: none;
+  height: 30px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--hover);
+  color: var(--ink);
+  font-size: calc(var(--text-size) - 1px);
+  transition: background-color 0.12s ease;
+}
+
+.set-button:hover {
+  background: color-mix(in srgb, var(--ink) 11%, transparent);
+}
+
+.set-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/* A few lines set as what you read is set, on the paper of the theme you read in: a window
+   onto a page, the same height whatever the size of its text, so that nothing under it moves.
+   It is as wide as the page, and its lines are as long as the reader's, in the middle of it. */
+.set-sample {
+  box-sizing: border-box;
+  height: 172px;
+  margin: 0 0 10px;
+  padding: 22px 28px 0;
+  overflow: hidden;
+  border-radius: var(--card-radius);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--ink) 14%, transparent);
+  transition: --paper var(--slide), --ink var(--slide);
+}
+
+.set-sample p {
+  max-width: var(--read-width);
+  height: 100%;
+  margin: 0 auto;
+  overflow: hidden;
+  font-family: var(--read-font);
+  font-size: var(--read-size);
+  line-height: var(--read-leading);
+  letter-spacing: 0;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
+}
+
+.set-foot {
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 1px);
+}
+
 /* The text panel: a menu's surface, holding rows of choices in place of a list. Each row is
    a name over a strip of buttons; of three, the one in force is filled, as in a menu. */
 .panel {
@@ -1730,6 +1871,237 @@ body.dragging * {
   animation: arrive 0.3s ease both;
 }
 
+/* Read in pages (app.js): the window does not scroll; only the section being read is shown,
+   set in columns the height of the page, one of which is in sight. The rest lie to the
+   right of it, out of sight beyond the page's side margins, and are brought across. */
+#reading.paged {
+  overflow: hidden;
+  background: var(--paper); /* a sheet of it: a turn slides the whole of it (below) */
+  view-transition-name: leaf;
+}
+
+#page.paged {
+  --leaf-top: 60px; /* (clear of the top bar, when it shows) */
+  --leaf-foot: 60px;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  box-sizing: border-box;
+  height: 100%;
+  padding-top: var(--leaf-top);
+  padding-bottom: var(--leaf-foot);
+  clip-path: inset(0 40px); /* to the column of text: the page's side margins are its own */
+}
+
+#page.paged .part {
+  display: none;
+  grid-area: 1 / 1;
+  min-width: 0;
+  height: 100%;
+  min-height: 0 !important; /* (a part not yet read has a height guessed for it, for scrolling) */
+  margin: 0;
+  column-count: 1;
+  column-gap: 80px; /* the side margins, together: so the next page starts clear of this one */
+  column-fill: auto;
+}
+
+#page.paged .part.now {
+  display: block;
+}
+
+/* A section being set out only to count its pages: as a page is, but unseen. */
+#page.paged .part.sizing {
+  display: block;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Around the page: the chapter above it, its number under it, and in the corner how much
+   of the chapter is left (in place of how far through the book, which is for scrolling).
+   Small and muted, and always there. */
+#running,
+#folio {
+  position: absolute;
+  right: 0;
+  left: 0;
+  display: none;
+  overflow: hidden;
+  color: var(--muted);
+  font: 400 12px / 16px var(--font);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+#reading.paged :is(#running, #folio) {
+  display: block;
+}
+
+#running {
+  top: 22px;
+  padding: 0 140px; /* (clear of the corners, where the top bar's buttons come) */
+}
+
+#folio {
+  bottom: 20px;
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
+#reading.paged #place {
+  position: absolute;
+  right: 14px;
+  bottom: 17px;
+  background: none;
+  font-family: var(--font);
+  letter-spacing: inherit;
+  opacity: 1;
+}
+
+/* A turn of the page (app.js starts it, and marks the root with which way). Going on, the
+   page that was slides away to the left, off the next, which lies under it in its shadow
+   and comes into the light as it is uncovered. Going back, the page before slides in from
+   the left over this one, which falls into its shadow. Nothing else in the window takes
+   part; the top bar is named only so that it stays above the sheet. */
+:root {
+  view-transition-name: none;
+}
+
+body[data-screen='reading'] #top {
+  view-transition-name: bar;
+}
+
+::view-transition {
+  pointer-events: none;
+}
+
+::view-transition-group(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(bar) {
+  display: none;
+}
+
+:root[data-turn]::view-transition-old(leaf),
+:root[data-turn]::view-transition-new(leaf) {
+  animation-duration: 0.5s; /* (a slow glide: the reader's own choice of these, and of the dim and the shadow) */
+  animation-timing-function: cubic-bezier(0.4, 0, 0.15, 1);
+  animation-fill-mode: both;
+}
+
+/* Going on: the old page is the sheet, on top, and slides off; the new one comes into the light. */
+:root[data-turn='on']::view-transition-old(leaf) {
+  z-index: 1;
+  box-shadow: 0 0 36px rgb(0 0 0 / 0.14);
+  animation-name: leaf-off;
+}
+
+:root[data-turn='on']::view-transition-new(leaf) {
+  animation-name: leaf-lit;
+}
+
+/* Going back: the new page is the sheet, on top, and slides in; the old one falls into shadow. */
+:root[data-turn='back']::view-transition-new(leaf) {
+  z-index: 1;
+  box-shadow: 0 0 36px rgb(0 0 0 / 0.14);
+  animation-name: leaf-in;
+}
+
+:root[data-turn='back']::view-transition-old(leaf) {
+  animation-name: leaf-dim;
+}
+
+@keyframes leaf-off {
+  to {
+    transform: translateX(calc(-100% - 40px));
+  }
+}
+
+@keyframes leaf-in {
+  from {
+    transform: translateX(calc(-100% - 40px));
+  }
+}
+
+@keyframes leaf-lit {
+  from {
+    filter: brightness(0.9);
+  }
+}
+
+@keyframes leaf-dim {
+  to {
+    filter: brightness(0.9);
+  }
+}
+
+/* A picture is never taller than its page, and is not cut by the foot of one. */
+#page.paged :is(img, svg) {
+  max-height: calc(100vh - var(--leaf-top) - var(--leaf-foot));
+  object-fit: contain;
+  break-inside: avoid;
+}
+
+#page.paged :is(h1, h2, h3, h4, h5, h6) {
+  break-after: avoid;
+}
+
+/* The arrow at either side, at the window's edge: there while the pointer is in that margin,
+   and on a tall pill while the pointer is on it. */
+.turner {
+  position: absolute;
+  top: 50%;
+  display: none;
+  place-items: center;
+  width: 36px;
+  height: 76px;
+  margin-top: -38px;
+  padding: 0;
+  border: 0;
+  border-radius: 18px;
+  outline: none;
+  background: transparent; /* (its pill shows only when the pointer is on it) */
+  color: var(--soft);
+  opacity: 0;
+  transition: opacity 0.18s ease, background-color 0.12s ease, color 0.12s ease;
+}
+
+#reading.paged .turner {
+  display: grid;
+}
+
+.turner[data-by='-1'] {
+  left: 12px;
+}
+
+.turner[data-by='1'] {
+  right: 12px;
+}
+
+.turner .icon {
+  width: 26px;
+  height: 26px;
+}
+
+.turner[data-by='-1'] .icon { mask-image: url(icons/alt-arrow-left-linear.svg); }
+.turner[data-by='1'] .icon { mask-image: url(icons/alt-arrow-right-linear.svg); }
+
+#reading[data-side='back'] .turner[data-by='-1'],
+#reading[data-side='on'] .turner[data-by='1'],
+.turner:focus-visible {
+  opacity: 1;
+}
+
+.turner:hover,
+.turner:focus-visible {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+
 /* What is highlighted is washed with its colour: one of five of the collections' colours. */
 #page ::highlight(light-0) { background-color: color-mix(in srgb, var(--hue-0) var(--wash), transparent); }
 #page ::highlight(light-1) { background-color: color-mix(in srgb, var(--hue-1) var(--wash), transparent); }
@@ -1852,6 +2224,81 @@ body.dragging * {
 .picker-tool:focus-visible {
   background: var(--hover);
   color: var(--ink);
+}
+
+/* A note of the book's own, shown at its number: a small card, as the row of colours is one,
+   in the app's own type. A long one scrolls within it. */
+.notepop {
+  position: fixed;
+  z-index: 10;
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(340px, calc(100vw - 24px));
+  max-height: min(280px, calc(100vh - 24px));
+  overflow-y: auto;
+  padding: 11px 14px;
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  border-radius: 14px;
+  background: var(--raised);
+  box-shadow: var(--shadow-small);
+  color: var(--ink);
+  font: 400 13px / 19px var(--font);
+  letter-spacing: -0.005em;
+  overflow-wrap: break-word;
+  user-select: text;
+  animation: arrive 0.12s ease;
+}
+
+.notepop * {
+  margin: 0;
+}
+
+.notepop > * + *,
+.notepop li + li {
+  margin-top: 8px;
+}
+
+.notepop ul,
+.notepop ol {
+  padding-left: 1.5em;
+}
+
+.notepop blockquote {
+  padding-left: 12px;
+}
+
+.notepop :is(h1, h2, h3, h4, h5, h6) {
+  font: inherit;
+  font-weight: 600;
+}
+
+.notepop img,
+.notepop svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.notepop sup,
+.notepop sub {
+  line-height: 0;
+  font-size: 0.75em;
+}
+
+.notepop a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--muted);
+  text-underline-offset: 0.15em;
+  cursor: pointer;
+}
+
+.notepop-number {
+  margin-right: 0.35em;
+  color: var(--muted);
+}
+
+.notepop ::selection {
+  background: color-mix(in srgb, var(--ink) 30%, transparent);
 }
 
 /* What find has found is marked with the theme's ink too: each lightly, and the one gone to
@@ -2111,6 +2558,20 @@ body.dragging * {
   background: #fff;
   mix-blend-mode: multiply;
   opacity: var(--leaf-opacity);
+}
+
+/* A real page's links: over its words, an unseen area for each, where the page draws it. */
+.links {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+}
+
+.links a {
+  position: absolute;
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 /* A real page's words: an unseen copy of its text over the picture of it, for selecting and

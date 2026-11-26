@@ -1,4 +1,6 @@
-const { app, BrowserWindow, ipcMain, nativeTheme, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeTheme, screen, shell } = require('electron');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const library = require('./library.js');
 
@@ -9,6 +11,19 @@ const headless = Boolean(process.env.INQUISITIVE_HEADLESS);
 if (headless) app.setPath('userData', path.join(app.getPath('temp'), 'inquisitive-test'));
 
 let win = null;
+
+// What the app keeps for itself between runs, apart from the library: whether it is light or
+// dark, or follows the Mac ('system'). It is read before the window opens, so that the
+// window opens in the right one.
+const KEPT = path.join(app.getPath('userData'), 'settings.json');
+const LOOKS = ['system', 'light', 'dark'];
+function kept() {
+  try {
+    return JSON.parse(fs.readFileSync(KEPT, 'utf8'));
+  } catch {
+    return {}; // nothing kept yet
+  }
+}
 
 // Where the window buttons sit: in the top bar, as far from its top as from the window's left.
 const LIGHTS = { x: 16, y: 15 };
@@ -87,7 +102,30 @@ ipcMain.on('watch-pointer', (event, on) => {
   }, 60);
 });
 
+// The Settings page: what it shows of the app (its version, whether it is light or dark, and
+// where the library is, with the home folder written ~), and what it changes.
+ipcMain.handle('settings:load', () => {
+  const folder = library.folder();
+  const home = os.homedir();
+  return { version: app.getVersion(), appearance: nativeTheme.themeSource, folder: folder.startsWith(home + path.sep) ? '~' + folder.slice(home.length) : folder };
+});
+ipcMain.on('settings:appearance', (event, look) => {
+  if (!LOOKS.includes(look)) return;
+  nativeTheme.themeSource = look;
+  try {
+    fs.writeFileSync(KEPT, JSON.stringify({ ...kept(), appearance: look }, null, 2));
+  } catch {
+    // not kept: it holds for this run
+  }
+});
+// The library's folder, shown in the Finder. (A test run off-screen opens nothing.)
+ipcMain.on('settings:reveal', () => {
+  if (!headless) shell.openPath(library.folder());
+});
+
 app.whenReady().then(() => {
+  const look = kept().appearance;
+  if (LOOKS.includes(look)) nativeTheme.themeSource = look;
   // Run from source, the Dock would show Electron's own icon; this gives it the app's.
   if (process.platform === 'darwin' && !app.isPackaged) app.dock.setIcon(path.join(__dirname, 'assets', 'icon.png'));
   library.listen();

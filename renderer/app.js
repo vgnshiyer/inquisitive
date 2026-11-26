@@ -67,7 +67,7 @@ const TABS = [
   { id: 'library', name: 'Library', test: () => true, tools: true },
   { id: 'finished', name: 'Finished', test: (item) => item.progress >= 1, dated: true, empty: 'What you finish reading is kept here.' },
   { id: 'collections', name: 'Collections', shelves: true },
-  { id: 'settings', name: 'Settings', test: () => false }, // a screen of its own; nothing on it yet
+  { id: 'settings', name: 'Settings', settings: true }, // a page of its own: the app's settings
 ];
 
 const $ = (id) => document.getElementById(id);
@@ -1059,6 +1059,7 @@ function drawShelf() {
   $('heading').textContent = tab.name;
   if (tab.home) return $('shelf-body').replaceChildren(...home());
   if (tab.shelves) return $('shelf-body').replaceChildren(...shelves());
+  if (tab.settings) return $('shelf-body').replaceChildren(settings());
   if (!tab.tools) {
     const list = items.filter(tab.test);
     if (tab.dated) list.sort((a, b) => when(b.finished) - when(a.finished)); // the latest finished first
@@ -1197,6 +1198,7 @@ async function bind(item) {
   for (const section of shape.sections) before.push(before.at(-1) + section.size);
   const mine = (book = { item, ...shape, parts, before, fetched: new Map(), dressed: new Set(), sheet: new CSSStyleSheet(), lights: [], ready: false });
   readLights(mine);
+  pace(); // read by scrolling, or in pages
   document.adoptedStyleSheets = [...document.adoptedStyleSheets, mine.sheet]; // the book's own styling, such of it as is kept
   contentsTool.hidden = !shape.toc.length;
   item.sections = parts.length;
@@ -1254,11 +1256,20 @@ async function bindPdf(item) {
 function drawSheet(mine, index) {
   if (!mine.fetched.has(index)) {
     const sheet = mine.parts[index];
-    const done = ({ canvas, words, shape }) => {
+    const done = ({ canvas, words, links, shape }) => {
       if (book !== mine || mine.fetched.get(index) !== drawing) return; // shut, or put away, or drawn afresh meanwhile
       canvas.className = 'leaf';
       sheet.style.aspectRatio = String(shape);
-      sheet.replaceChildren(canvas, words);
+      // Over the words, an unseen area for each of the page's links, where the page draws it.
+      const over = el('div', 'links');
+      for (const { box, out, dest } of links) {
+        const link = el('a');
+        [link.style.left, link.style.top, link.style.width, link.style.height] = box.map((part) => part * 100 + '%');
+        if (out) link.dataset.out = out;
+        else link.dataset.dest = JSON.stringify(dest);
+        over.append(link);
+      }
+      sheet.replaceChildren(canvas, words, over);
       arrived(index);
     };
     sheet.dataset.drawn = sheet.clientWidth; // how wide it was drawn for
@@ -1349,6 +1360,7 @@ const depthOf = (node) => node.getBoundingClientRect().top - $('reading').getBou
 
 /** Where the reading line is: which section, and how far through that section. */
 function placeNow() {
+  if (book.leaf) return { section: book.leaf.section, part: book.leaf.part }; // read in pages: the page, out of the section's
   const line = $('reading').scrollTop + lineOf();
   let section = 0;
   for (let i = 0; i < book.parts.length && depthOf(book.parts[i]) <= line + 1; i++) section = i; // (a pixel of leeway: a part brought exactly to the line is the one you are in)
@@ -1358,6 +1370,7 @@ function placeNow() {
 
 /** Brings a place to the reading line. */
 function seek({ section, part }) {
+  if (book.leaf) return setLeaf(Math.min(section, book.parts.length - 1), { part });
   const to = book.parts[Math.min(section, book.parts.length - 1)];
   $('reading').scrollTop = depthOf(to) + part * to.offsetHeight - lineOf();
 }
@@ -1371,9 +1384,18 @@ async function go(section, place) {
   if (!mine.pdf) await around(section); // (a PDF's sheets have their true height already)
   if (book !== mine) return;
   const to = named(section, place) || mine.parts[section];
-  $('reading').scrollTop = depthOf(to) - lineOf();
+  if (mine.leaf) {
+    setLeaf(section, 0); // (shown, so that the place in it can be found)
+    setLeaf(section, pageHolding(to, mine.parts[section]));
+    around(section);
+    note();
+  } else $('reading').scrollTop = depthOf(to) - lineOf();
   $('page').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease' }); // it arrives as a page does
 }
+
+/** Whether something on the page lies further on than where you are (it must be in the
+    section you are in). */
+const beyond = (thing) => (book.leaf ? pageHolding(thing, book.parts[book.leaf.section]) > book.leaf.page : depthOf(thing) > $('reading').scrollTop + lineOf() + 1);
 
 /** Notes where you are: on the item (to come back to), in the corner, and in the library. How
     far through the book that is goes by the sizes of its sections. At the very foot of the
@@ -1383,12 +1405,12 @@ function note() {
   const { item, sections, before } = book;
   const at = placeNow();
   const reading = $('reading');
-  const end = reading.scrollTop + reading.clientHeight >= reading.scrollHeight - 4;
-  item.at = { section: at.section, part: Math.round(at.part * 1e4) / 1e4 };
+  const end = book.leaf ? book.leaf.end : reading.scrollTop + reading.clientHeight >= reading.scrollHeight - 4;
+  item.at = { section: at.section, part: Math.round(at.part * 1e6) / 1e6 };
   item.progress = end ? 1 : Math.min(0.999, (before[at.section] + at.part * sections[at.section].size) / before.at(-1));
   if (end) item.finished ??= Date.now();
   else delete item.finished;
-  $('place').textContent = Math.round(item.progress * 100) + '%';
+  if (!book.leaf) $('place').textContent = Math.round(item.progress * 100) + '%'; // (read in pages, the corner says how much of the chapter is left)
   save();
 }
 
@@ -1401,12 +1423,14 @@ function shut() {
   remark();
   drawFound();
   closePicker();
+  closeNote();
   closeLights();
   if (writing) wrote();
   book.watch?.disconnect();
   document.adoptedStyleSheets = document.adoptedStyleSheets.filter((sheet) => sheet !== book.sheet);
   Pdf.close(book.pdf);
   book = null;
+  pace();
   relight();
   layNow();
   save(true);
@@ -1422,15 +1446,135 @@ $('reading').addEventListener('scroll', () => {
   });
 }, { passive: true });
 
-// A link in a book leads to another place in it, or out to the web.
+// A book's own notes. A link to one shows it at its number, in place of going to it. Such a
+// link is one the book calls a note's number; or one that leads to a stretch of the book
+// which has a link back to where it came from, as a note has.
+let noter = null; // the note, when one is up: its element, and the link it is for
+let dropped = null; // the link whose note the press now under way put away (pressing a number again closes its note)
+const MOST_NOTE = 4000; // letters: what is longer is no note, or is better read where it is
+const NUMBER = /^[[(]?[\w*†‡§¶‖#]{1,6}[\])]?[.:]?$/; // a way back that is the note's own number: "1", "[12]", "*"
+
+function closeNote() {
+  if (!noter) return;
+  noter.node.remove();
+  noter = null;
+}
+
+/** The note a link on the page leads to, if it leads to one: a copy of it, without its ways
+    back (one that is the note's number stays, as a number). */
+async function noteOf(link, section) {
+  const mine = book;
+  const home = mine.parts.findIndex((part) => part.contains(link));
+  const block = link.closest(BLOCK);
+  if (!link.dataset.place || home < 0 || !block) return null;
+  // What the note is in is read from the page if it is there, and apart from it if not (as
+  // it must be for what the book keeps out of its reading order, which is never on the page).
+  let root = mine.parts[section];
+  if (mine.fetched.has(section)) await mine.fetched.get(section);
+  else root = (await Book.piece(mine.item, link.dataset.to)).content;
+  if (book !== mine || !link.isConnected) return null;
+  let note = root.querySelector('#' + CSS.escape('b-' + link.dataset.place));
+  while (note && !BLOCKS.has(note.localName)) note = note.parentElement; // (a name on a word or two: the note is the paragraph they are in)
+  if (!note || note === root || note.contains(link)) return null;
+  // A way back leads to the link, or to somewhere in the same paragraph as it.
+  const path = mine.sections[home].path;
+  const ways = [...note.querySelectorAll('a')].map((way) => way.dataset.to === path && Boolean(way.dataset.place) && block.contains(named(home, way.dataset.place)));
+  if (link.dataset.bNote === undefined && !ways.includes(true)) return null;
+  const copy = note.cloneNode(true);
+  let number = '';
+  [...copy.querySelectorAll('a')].forEach((way, index) => {
+    if (!ways[index]) return;
+    const text = way.textContent.trim();
+    if (NUMBER.test(text) && !/^(back|return|up|top)$/i.test(text)) {
+      const shown = el('span', 'notepop-number', text);
+      way.replaceWith(shown);
+      // (A stop written after the number, outside the link, belongs with it: "1." and not "1 .")
+      const stop = shown.nextSibling?.nodeType === Node.TEXT_NODE ? shown.nextSibling.data.match(/^[.):\]]+/) : null;
+      if (stop) {
+        shown.textContent += stop[0];
+        shown.nextSibling.data = shown.nextSibling.data.slice(stop[0].length);
+      }
+      number += shown.textContent;
+      return;
+    }
+    let left = way.parentElement; // whatever held nothing but the way back goes with it
+    way.remove();
+    while (left && left !== copy && !left.textContent.trim() && !left.querySelector('img, svg, math')) {
+      const next = left.parentElement;
+      left.remove();
+      left = next;
+    }
+  });
+  for (const called of copy.querySelectorAll('[id]')) called.removeAttribute('id');
+  for (const styled of copy.querySelectorAll('[style]')) styled.removeAttribute('style');
+  const letters = copy.textContent.replace(/\s+/g, '').length;
+  if (letters > MOST_NOTE || (letters <= number.length && !copy.querySelector('img, svg, math'))) return null;
+  return copy;
+}
+
+/** Puts a note up at the link to it: under the link's line, centred on it; over the line if
+    there is no room beneath. Either way, in the window. */
+function openNote(link, note) {
+  closeNote();
+  closePicker();
+  const node = el('div', 'notepop');
+  node.setAttribute('role', 'note');
+  node.append(...note.childNodes);
+  node.addEventListener('click', (e) => {
+    const within = e.target.closest('a');
+    if (!within) return;
+    e.preventDefault();
+    closeNote();
+    follow(within);
+  });
+  document.body.append(node);
+  const at = link.getBoundingClientRect();
+  const mine = node.getBoundingClientRect();
+  node.style.left = Math.max(12, Math.min(at.left + at.width / 2 - mine.width / 2, innerWidth - mine.width - 12)) + 'px';
+  node.style.top = (at.bottom + 8 + mine.height <= innerHeight - 12 ? at.bottom + 8 : Math.max(12, at.top - mine.height - 8)) + 'px';
+  noter = { node, link };
+}
+
+/** Follows a link in a book or a PDF: to a note of the book's (shown where the link is), to
+    another place in it, or out to the web. */
+async function follow(link) {
+  if (link.dataset.out) return window.api.library.out(link.dataset.out);
+  const mine = book;
+  if (mine.pdf) {
+    // In a PDF: to the page the link names, and as far down it as it says.
+    const at = link.dataset.dest ? await Pdf.place(mine.pdf.doc, JSON.parse(link.dataset.dest)) : null;
+    if (book !== mine || !at) return;
+    seek(at);
+    $('page').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease' }); // it arrives as a page does
+    return;
+  }
+  const section = mine.sections.findIndex((entry) => entry.path === link.dataset.to);
+  if (section < 0 && !mine.aside?.includes(link.dataset.to)) return;
+  const note = $('page').contains(link) ? await noteOf(link, section).catch(() => null) : null;
+  if (book !== mine) return;
+  if (note) return openNote(link, note);
+  closeNote();
+  if (section >= 0) go(section, link.dataset.place);
+}
+
 $('page').addEventListener('click', (e) => {
   const link = book && e.target.closest('a');
   if (!link) return;
   e.preventDefault();
-  if (link.dataset.out) return window.api.library.out(link.dataset.out);
-  const section = book.sections.findIndex((entry) => entry.path === link.dataset.to);
-  if (section >= 0) go(section, link.dataset.place);
+  if (e.detail) link.blur(); // (pressed with the pointer: it is not left ringed when a key is next pressed)
+  if (link === dropped) return; // (its note was up, and this press put it away)
+  follow(link);
 });
+
+// A press anywhere but on the note puts it away; so do scrolling and a change in the window's size.
+document.addEventListener('mousedown', (e) => {
+  dropped = null;
+  if (!noter || noter.node.contains(e.target)) return;
+  if (e.target.closest?.('a') === noter.link) dropped = noter.link;
+  closeNote();
+}, true);
+$('reading').addEventListener('scroll', closeNote, { passive: true });
+window.addEventListener('resize', closeNote);
 
 // The contents: a book's chapters, in a menu hung from the top bar's contents button, open at
 // the chapter being read. Choosing one goes to it.
@@ -1440,10 +1584,9 @@ contentsTool.addEventListener('click', () => {
   if (menu?.owner === contentsTool) return closeMenu();
   // A real book's contents are its own: titles, some nested under others. The one being
   // read is the last that starts at or before where you are: in an earlier section, or in
-  // this one at or above the reading line.
+  // this one at or above the reading line (or, read in pages, on this page or one before).
   const at = book?.ready ? placeNow().section : -1;
-  const line = $('reading').scrollTop + (book ? lineOf() : 0) + 1;
-  const here = book?.ready ? book.toc.findLast((entry) => entry.section < at || (entry.section === at && !(named(at, entry.place) && depthOf(named(at, entry.place)) > line))) : null;
+  const here = book?.ready ? book.toc.findLast((entry) => entry.section < at || (entry.section === at && !(named(at, entry.place) && beyond(named(at, entry.place))))) : null;
   const chapters = book ? book.toc.map((entry) => ({ name: entry.title, indent: entry.depth, on: entry === here, run: () => go(entry.section, entry.place) })) : open.chapters.map((name, i) => ({
     lead: String(i + 1),
     name,
@@ -1459,6 +1602,280 @@ contentsTool.addEventListener('click', () => {
   openMenu(chapters, contentsTool, true);
 });
 
+// ---------- pages ----------
+// A book or an article can be read a page at a time instead of as one long scroll (the
+// text panel says which). Then only the section being read is shown, set in columns the
+// height of the window, of which one is in sight: a page. Turning shows the next column;
+// past a section's last page comes the next section's first, and before its first the one
+// before's last. (The way of it follows foliate-js's paginator: MIT.) A PDF's pages are
+// sheets already, and stay as they are.
+//
+// A turn is drawn as a sheet of paper is turned: going on, the page in sight slides away
+// to the left off the next, which lies under it in its shadow; going back, the page before
+// slides in from the left over this one. The browser draws it (a view transition: it takes
+// a picture of the window as it was, and style.css says how that and the new page move).
+//
+// Where you are is kept as it is when scrolling: the section, and how far through it,
+// which here is the page out of however many the section makes at this size of window and
+// of text.
+
+const GUTTER = 80; // between one page and the next: the page's side margins, together (style.css)
+
+/** How far across one page is from the next. */
+const stride = (part) => part.clientWidth + GUTTER;
+
+/** How many pages a section makes (it must be the one shown). */
+const pagesOf = (part) => Math.max(1, Math.round((part.scrollWidth + GUTTER) / stride(part)));
+
+/** Where something on the page begins. A thing with no place of its own there (an empty
+    marker, which is what many a contents entry points at) begins where what follows it does. */
+function boxOf(thing) {
+  let box = thing.getClientRects()[0];
+  if (box || !(thing instanceof Element)) return box;
+  const walker = document.createTreeWalker(thing.closest('.part') ?? $('page'), NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  walker.currentNode = thing;
+  const range = document.createRange();
+  for (let node = walker.nextNode(); node && !box; node = walker.nextNode()) {
+    if (node.nodeType === Node.ELEMENT_NODE) box = node.getClientRects()[0];
+    else if (node.nodeValue.trim()) (range.selectNodeContents(node), (box = range.getClientRects()[0]));
+  }
+  return box;
+}
+
+/** Which of its section's pages something on the page is on (its section must be shown). */
+function pageHolding(thing, part) {
+  const box = boxOf(thing);
+  return box ? Math.max(0, Math.floor((box.left - part.getBoundingClientRect().left + 1) / stride(part))) : 0;
+}
+
+/** Shows a page of a section, at once: by its number (too high a one is the last), or by how
+    far through the section it is. */
+function setLeaf(section, page) {
+  const leaf = book.leaf;
+  const part = book.parts[section];
+  for (const other of book.parts) other.classList.toggle('now', other === part);
+  const of = pagesOf(part);
+  leaf.section = section;
+  leaf.of = of;
+  leaf.page = Math.max(0, Math.min(typeof page === 'number' ? page : Math.floor(page.part * of + 0.01), of - 1));
+  // How far through the section that is: just as far as was asked for, if that was how the
+  // page was chosen (so that it is come back to, whatever the pages become meanwhile).
+  leaf.part = typeof page === 'number' ? leaf.page / of : page.part;
+  leaf.end = section === book.parts.length - 1 && leaf.page === of - 1;
+  part.style.transform = `translateX(${-leaf.page * stride(part)}px)`;
+  closePicker();
+  closeNote();
+  layNow();
+  recount();
+  furnish();
+}
+
+// Around the page, read in pages: the chapter it is in, above it; its number in the book,
+// under it; and how many pages of the chapter are left, in the corner.
+//
+// A page's number takes knowing how many pages every section before it makes, which is
+// only known by setting each out. That is done behind the page, a section at a time while
+// nothing else is happening, once the book is open and again whenever the pages change
+// (the text is set anew, or the window changes size). Until it has got as far as the page
+// in sight, there is no number to show.
+
+/** Counts the book's pages afresh, if they are not as they were when last counted. */
+function recount() {
+  const mine = book;
+  const leaf = mine.leaf;
+  const part = mine.parts[leaf.section];
+  const key = [part.clientWidth, part.clientHeight, setting.face, setting.size, setting.spacing].join(' ');
+  if (leaf.count?.key !== key) {
+    leaf.count = { key, pages: [] }; // how many pages each section makes, as far as is known
+    counting(mine, leaf.count);
+  }
+  leaf.count.pages[leaf.section] = leaf.of; // (the one in sight is known already)
+}
+
+async function counting(mine, count) {
+  const idle = () => new Promise((go) => requestIdleCallback(go, { timeout: 400 }));
+  for (let index = 0; index < mine.parts.length; index++) {
+    if (count.pages[index] !== undefined) continue;
+    await idle();
+    await fill(index);
+    while (leafing) await leafing.finished.catch(() => {}); // (not in the middle of a turn)
+    if (book !== mine || mine.leaf?.count !== count) return; // shut, or the pages have changed again
+    if (count.pages[index] !== undefined) continue;
+    // Set out as a page is, but unseen, for as long as it takes to count its pages.
+    const part = mine.parts[index];
+    part.classList.add('sizing');
+    count.pages[index] = bare(part) ? 0 : pagesOf(part);
+    part.classList.remove('sizing');
+    furnish();
+  }
+}
+
+/** Writes what goes around the page. */
+function furnish() {
+  const leaf = book?.leaf;
+  if (!leaf) return void ($('running').textContent = $('folio').textContent = '');
+  const pages = leaf.count?.pages ?? [];
+  /** How many pages a run of sections makes; nothing, if any of them is yet to be counted. */
+  const run = (from, to) => {
+    let sum = 0;
+    for (let index = from; index < to; index++) {
+      if (pages[index] === undefined) return null;
+      sum += pages[index];
+    }
+    return sum;
+  };
+  const before = run(0, leaf.section);
+  $('folio').textContent = before === null ? '' : String(before + leaf.page + 1);
+
+  // The chapter: the last of the contents' entries to start at or before this page. It
+  // runs to the next entry at its own depth or a shallower one.
+  const at = leaf.section;
+  const part = book.parts[at];
+  const ahead = (entry) => entry.section > at || (entry.section === at && Boolean(named(at, entry.place)) && beyond(named(at, entry.place)));
+  const here = book.toc.findLast((entry) => !ahead(entry));
+  const next = book.toc.slice(book.toc.indexOf(here) + 1).find((entry) => ahead(entry) && (!here || entry.depth <= here.depth));
+  $('running').textContent = here?.title ?? '';
+  let left; // pages of the chapter after this one
+  if (next?.section === at) {
+    // It starts in this section: on a page of its own, if it starts at the head of one.
+    const mark = named(at, next.place);
+    const head = (boxOf(mark)?.top ?? 0) - part.getBoundingClientRect().top < 48;
+    left = Math.max(0, pageHolding(mark, part) - leaf.page - (head ? 1 : 0));
+  } else {
+    const between = run(at + 1, next ? next.section : book.parts.length);
+    left = between === null ? null : leaf.of - 1 - leaf.page + between;
+  }
+  // (Before the first chapter of a book that has chapters, there is no chapter to speak of.)
+  const where = here ? (left ? ' left in chapter' : ' of chapter') : left ? ' left' : '';
+  $('place').textContent = left === null || (!here && book.toc.length) ? '' : left ? `${left} ${left === 1 ? 'page' : 'pages'}${where}` : 'Last page' + where;
+}
+
+/** Whether a section has nothing in it to read or to look at. */
+const bare = (part) => !part.textContent.trim() && !part.querySelector('img, svg');
+
+let leafing = null; // the turn of the page now being drawn
+
+/** Turns the page: on by one, or back by one. */
+async function turnPage(by) {
+  const mine = book;
+  const leaf = mine?.leaf;
+  if (!leaf || !mine.ready || leaf.busy) return;
+  let to = leaf.section;
+  let page = leaf.page + by;
+  if (page < 0 || page >= pagesOf(mine.parts[to])) {
+    // Out of this section: into the next that has anything in it, or the one before.
+    leaf.busy = true;
+    for (to += by; to >= 0 && to < mine.parts.length; to += by) {
+      await fill(to);
+      if (book !== mine || !mine.leaf) return;
+      if (!bare(mine.parts[to])) break;
+    }
+    leaf.busy = false;
+    if (to < 0 || to >= mine.parts.length) {
+      // There is no further to go. Forwards, that is the end of the book.
+      if (by > 0 && !leaf.end) (leaf.end = true), note();
+      return;
+    }
+    page = by > 0 ? 0 : Infinity;
+    around(to); // what lies either side is made ready
+  }
+  const show = () => {
+    leaf.busy = false;
+    if (book !== mine || !mine.leaf) return;
+    setLeaf(to, page);
+    note();
+  };
+  // Drawn as a turn where it can be seen, and where movement is wanted. (One turn is drawn
+  // at a time: a turn asked for while another is being drawn cuts that one short.)
+  if (!document.startViewTransition || document.visibilityState !== 'visible' || matchMedia('(prefers-reduced-motion: reduce)').matches) return show();
+  const root = document.documentElement;
+  leafing?.skipTransition();
+  root.dataset.turn = by > 0 ? 'on' : 'back';
+  leaf.busy = true; // (until the picture of this page has been taken: a moment)
+  const turn = (leafing = document.startViewTransition(show));
+  const done = () => {
+    if (leafing !== turn) return;
+    leafing = null;
+    delete root.dataset.turn;
+  };
+  turn.finished.then(done, done);
+}
+
+/** Sets the reader to pages or to scrolling, as is chosen for the kind of thing this is: a
+    book or an article. A PDF always scrolls. */
+function pace() {
+  const on = Boolean(book && !book.pdf && setting[paceOf(book.item)] === 'pages');
+  $('reading').classList.toggle('paged', on);
+  $('page').classList.toggle('paged', on);
+  if (!book || Boolean(book.leaf) === on) return;
+  if (on) return void (book.leaf = { section: 0, page: 0, of: 1, part: 0, end: false, busy: false });
+  delete book.leaf;
+  for (const part of book.parts) {
+    part.classList.remove('now');
+    part.style.transform = '';
+  }
+  furnish();
+  $('place').textContent = Math.round(book.item.progress * 100) + '%';
+}
+
+// A page is turned by a click in the margin to either side (or on the arrow that shows
+// there), by a swipe or a turn of the wheel, and by the keys (further down).
+$('reading').addEventListener('click', (e) => {
+  if (!book?.leaf || !getSelection().isCollapsed) return;
+  const arrow = e.target.closest('.turner');
+  if (arrow) return turnPage(Number(arrow.dataset.by));
+  if (![$('reading'), $('page'), $('margin')].includes(e.target)) return;
+  const box = $('page').getBoundingClientRect();
+  if (e.clientX < box.left + GUTTER / 2) turnPage(-1);
+  else if (e.clientX > box.right - GUTTER / 2) turnPage(1);
+});
+
+// The arrow at either side shows while the pointer is in that margin.
+$('reading').addEventListener('mousemove', (e) => {
+  const box = $('page').getBoundingClientRect();
+  $('reading').dataset.side = e.clientX < box.left + GUTTER / 2 ? 'back' : e.clientX > box.right - GUTTER / 2 ? 'on' : '';
+});
+$('reading').addEventListener('mouseleave', () => ($('reading').dataset.side = ''));
+
+// One swipe of the trackpad or turn of the wheel, either way, is one page: once it has
+// turned the page, the rest of it is let go, as it runs on and dies away. The window is
+// told how far a swipe has gone but not when the fingers are put down or lifted, so where
+// one swipe ends and the next begins has to be judged from the run of it. Another swipe is
+// taken to have begun when nothing has come for a tenth of a second; or, a third of a
+// second or more after the turn, when the run had fallen to a fifth of its height (or all
+// but stopped) and then climbs again, each of four steps bigger than the last. (Coasting
+// only ever falls away; fingers setting off again climb.)
+const pushed = { sum: 0, when: 0, spent: false, since: 0, peak: 0, low: Infinity, last: [0, 0, 0] };
+$('reading').addEventListener('wheel', (e) => {
+  if (!book?.leaf || e.ctrlKey) return;
+  const by = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+  const size = Math.abs(by);
+  const [a, b, c] = pushed.last;
+  const climbing = a < b && b < c && c < size && size >= 20;
+  const fallen = pushed.low <= Math.max(3, pushed.peak / 5);
+  if (e.timeStamp - pushed.when > 100 || (pushed.spent && e.timeStamp - pushed.since > 350 && fallen && climbing)) (pushed.sum = 0), (pushed.spent = false);
+  pushed.when = e.timeStamp;
+  pushed.last = [b, c, size];
+  if (pushed.spent) {
+    pushed.peak = Math.max(pushed.peak, size);
+    pushed.low = Math.min(pushed.low, size);
+    return;
+  }
+  pushed.sum += by;
+  if (Math.abs(pushed.sum) < 50) return;
+  pushed.spent = true;
+  pushed.since = e.timeStamp;
+  pushed.peak = size;
+  pushed.low = size;
+  turnPage(pushed.sum > 0 ? 1 : -1);
+}, { passive: true });
+
+// The window changing size makes other pages of the section: the one shown is the one that
+// holds where you were.
+new ResizeObserver(() => {
+  if (book?.leaf && book.ready && !book.leaf.busy) setLeaf(book.leaf.section, { part: book.leaf.part });
+}).observe($('reading'));
+
 // ---------- finding in what is open ----------
 // Find looks through the whole of the book, article or PDF that is open, a section at a
 // time, reading each one's words as they are wanted and keeping them while it stays open.
@@ -1472,6 +1889,7 @@ contentsTool.addEventListener('click', () => {
 
 // Where one of these ends, so does a word.
 const BLOCKS = new Set('address article aside blockquote br dd div dl dt figcaption figure footer h1 h2 h3 h4 h5 h6 header hr li ol p pre section table td th tr ul'.split(' '));
+const BLOCK = [...BLOCKS].join(', '); // (as a selector)
 
 /** The words under a node as one string: its text nodes end to end, with a space wherever a
     block or a line ends. With it, each text node and where in the string it starts, and
@@ -1692,7 +2110,13 @@ async function goFound(at) {
     seen there (the book hides its words, say), its part to the reading line. */
 function bring(range, section) {
   const reading = $('reading');
-  if (range?.getClientRects().length) reading.scrollTop += range.getBoundingClientRect().top - reading.getBoundingClientRect().top - reading.clientHeight * 0.3;
+  if (book.leaf) {
+    // Read in pages: the page it is on. (Its section is shown first, so that it can be found there.)
+    setLeaf(section, 0);
+    if (range?.getClientRects().length) setLeaf(section, pageHolding(range, book.parts[section]));
+    around(section);
+    note();
+  } else if (range?.getClientRects().length) reading.scrollTop += range.getBoundingClientRect().top - reading.getBoundingClientRect().top - reading.clientHeight * 0.3;
   else reading.scrollTop = depthOf(book.parts[section]) - lineOf();
   $('page').animate([{ opacity: 0 }, { opacity: 1 }], { duration: 300, easing: 'ease' }); // it arrives as a page does
 }
@@ -1766,6 +2190,7 @@ function closeFind() {
 function openFind() {
   if (!book) return;
   if (finder) return finder.field.select();
+  closeNote();
   closeMenu();
   closePanel();
   closeLights();
@@ -2085,7 +2510,15 @@ function layNotes() {
 
 function layNow() {
   cancelAnimationFrame(laying);
-  const shown = (book?.lights ?? []).filter((light) => (light.note || light === writing) && lit.get(light.id)?.getClientRects().length);
+  const reading = $('reading');
+  const frame = reading.getBoundingClientRect();
+  // The column of text: the page, within its side margins.
+  const column = $('page').getBoundingClientRect();
+  const left = column.left + GUTTER / 2 - frame.left;
+  const right = column.right - GUTTER / 2 - frame.left;
+  // (Read in pages, only what is on the page in sight.)
+  const first = (light) => lit.get(light.id)?.getClientRects()[0];
+  const shown = (book?.lights ?? []).filter((light) => (light.note || light === writing) && first(light) && (!book.leaf || (first(light).left - frame.left >= left - 1 && first(light).left - frame.left < right)));
   for (const [light, node] of asides) {
     if (shown.includes(light)) continue;
     if (light === writing) wrote(); // (its words are kept, though its place has left the page)
@@ -2093,18 +2526,15 @@ function layNow() {
     asides.delete(light);
   }
   if (!shown.length) return;
-  const reading = $('reading');
-  const frame = reading.getBoundingClientRect();
   const GAP = 22; // between the text and a note
   const EDGE = 16; // between a note and the window
   const LINE = 18; // a note's line
   const placed = shown.map((light) => {
-    const box = lit.get(light.id).getClientRects()[0];
-    const part = book.parts[light.section].getBoundingClientRect();
-    return { light, y: box.top - frame.top + reading.scrollTop + (box.height - LINE) / 2, left: part.left - frame.left, right: part.right - frame.left };
+    const box = first(light);
+    return { light, y: box.top - frame.top + reading.scrollTop + (box.height - LINE) / 2 };
   }).sort((a, b) => a.y - b.y);
   const ends = { right: -Infinity, left: -Infinity }; // how far down each margin is taken
-  for (const { light, y, left, right } of placed) {
+  for (const { light, y } of placed) {
     const room = Math.min(200, left - GAP - EDGE, reading.clientWidth - right - GAP - EDGE);
     const slim = room < 120;
     let node = asides.get(light);
@@ -2326,7 +2756,11 @@ const FACES = [['sans', 'Sans', 'var(--font)'], ['serif', 'Serif', 'var(--font-s
 const SIZE = { least: 14, most: 24 };
 const SPACINGS = [['tight', 'Tight', 1.5], ['normal', 'Normal', 1.7], ['loose', 'Loose', 1.9]];
 const WIDTHS = [['narrow', 'Narrow', 540, 620], ['normal', 'Normal', 620, 760], ['wide', 'Wide', 720, 920]]; // a column of text, then a PDF's sheet
-const setting = { theme: null, face: 'sans', size: 17, spacing: 'normal', width: 'normal' };
+const READINGS = [['scroll', 'Scrolling'], ['pages', 'Pages']];
+// (Scrolling or pages is kept twice: `reading` for books, `readingArticles` for articles.)
+const setting = { theme: null, face: 'sans', size: 17, spacing: 'normal', width: 'normal', reading: 'scroll', readingArticles: 'scroll' };
+/** Which of the two an item is read by. */
+const paceOf = (item) => (item?.kind === 'article' ? 'readingArticles' : 'reading');
 try {
   Object.assign(setting, JSON.parse(localStorage.getItem('text')));
 } catch {
@@ -2392,6 +2826,7 @@ function setText() {
   const width = WIDTHS.find(([id]) => id === setting.width) ?? WIDTHS[1];
   root.setProperty('--read-width', width[2] + 'px');
   root.setProperty('--sheet-width', width[3] + 'px');
+  pace(); // scrolling, or pages
   if (place) seek(place);
   else reading.scrollTop = at * room();
   redraw(); // a PDF's pages, at their new width
@@ -2467,6 +2902,8 @@ function drawPanel() {
     ...group('Size', setting.size, [step(-1, 'Smaller text', 'seg-small'), step(1, 'Larger text', 'seg-large')]),
     ...group('Spacing', null, SPACINGS.map(([id, label]) => choice(label, setting.spacing === id, () => (setting.spacing = id)))),
     ...width,
+    // Books and articles each keep their own: this is the one for the kind being read.
+    ...group(open?.kind === 'article' ? 'Reading articles' : 'Reading books', null, READINGS.map(([id, label]) => choice(label, setting[paceOf(open)] === id, () => (setting[paceOf(open)] = id)))),
   );
   keep();
 }
@@ -2509,6 +2946,153 @@ window.addEventListener('blur', closePanel);
 window.addEventListener('resize', closePanel);
 setText();
 
+// ---------- the settings page ----------
+
+// Settings is a page of the library's, in three parts. First what is the app's own: whether
+// it is light or dark, and where the library is kept. Then how what you read is set: the same
+// choices as the text panel's, with a few lines of text over them to show what they do. Last,
+// whether a book is read by scrolling or in pages, and whether an article is.
+let about = null; // what the main process says of the app: its version, light or dark, and the library's folder
+let settled = null; // brings the page's controls into line with what is chosen, while it is the page shown
+window.api.settings.load().then((told) => {
+  about = told;
+  if (tab.settings && !open) drawShelf();
+});
+
+const LOOKS = [['system', 'System'], ['light', 'Light'], ['dark', 'Dark']];
+const SAMPLE_LINES = 'Some books are read in an afternoon and gone by evening. Others stay on the desk for a month, opened a few pages at a time, and are still being argued with a year later. The second kind is why a library is worth keeping: a place where what you have read stays within reach, your own marks in its margins, ready to be opened again at the page where you left it.';
+
+function settings() {
+  const syncs = []; // each brings one control into line with what is chosen
+  const sync = () => syncs.forEach((run) => run());
+  /** A row: its name (and, after it, what is chosen, where the control does not say), a line
+      more about it, and its control. */
+  const row = (name, control, { more, value, number } = {}) => {
+    const made = el('div', 'set-row');
+    const title = el('div', 'set-name', name);
+    if (value) {
+      const shown = el('span', number ? 'set-value set-number' : 'set-value');
+      title.append(shown);
+      syncs.push(() => (shown.textContent = value()));
+    }
+    made.append(title);
+    if (more) made.append(el('div', 'set-more', more));
+    made.append(control);
+    return made;
+  };
+  /** A strip of choices, the one in force filled. */
+  const strip = (choices, now, pick, dress) => {
+    const made = el('div', 'seg');
+    for (const choice of choices) {
+      const button = el('button', '', choice[1]);
+      button.type = 'button';
+      dress?.(button, choice);
+      button.addEventListener('click', () => {
+        pick(choice[0]);
+        sync();
+      });
+      syncs.push(() => button.setAttribute('aria-pressed', String(now() === choice[0])));
+      made.append(button);
+    }
+    return made;
+  };
+  /** One of the text's settings, as a strip. */
+  const text = (key, choices, dress) => strip(choices, () => setting[key], (id) => ((setting[key] = id), setText()), dress);
+  /** A part of the page: its name, a line about it, something to show, and its rows, which
+      stand side by side where the page is wide enough for two. */
+  const part = (name, lead, shown, ...rows) => {
+    const made = el('section', 'set');
+    const grid = el('div', 'set-rows');
+    grid.append(...rows);
+    made.append(el('h2', 'set-head', name));
+    if (lead) made.append(el('p', 'set-lead', lead));
+    if (shown) made.append(shown);
+    made.append(grid);
+    return made;
+  };
+
+  const look = strip(LOOKS, () => about?.appearance ?? 'system', (id) => {
+    if (about) about.appearance = id;
+    window.api.settings.appearance(id);
+  });
+  const reveal = el('button', 'set-button', 'Show in Finder');
+  reveal.type = 'button';
+  reveal.addEventListener('click', () => window.api.settings.reveal());
+
+  // A few lines set as what you read is set, in the theme you read in.
+  const sample = el('div', 'set-sample');
+  sample.append(el('p', '', SAMPLE_LINES));
+  syncs.push(() => {
+    if (THEMES.some(([id]) => id === setting.theme)) sample.dataset.theme = setting.theme;
+    else delete sample.dataset.theme; // none chosen: what the app is wearing
+  });
+  const worn = () => setting.theme ?? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  const dots = el('div', 'dots');
+  for (const [id, name] of THEMES) {
+    const dot = el('button', 'dot');
+    dot.type = 'button';
+    dot.dataset.theme = id;
+    dot.dataset.tip = name;
+    dot.setAttribute('aria-label', name);
+    dot.addEventListener('click', () => {
+      setting.theme = id;
+      setText();
+      sync();
+    });
+    syncs.push(() => dot.setAttribute('aria-pressed', String(worn() === id)));
+    dots.append(dot);
+  }
+  const step = (by, label, className) => {
+    const made = el('button', className, 'A');
+    made.type = 'button';
+    made.setAttribute('aria-label', label);
+    made.addEventListener('click', () => {
+      setting.size += by;
+      setText();
+      sync();
+    });
+    syncs.push(() => (made.disabled = setting.size + by < SIZE.least || setting.size + by > SIZE.most));
+    return made;
+  };
+  const size = el('div', 'seg');
+  size.append(step(-1, 'Smaller text', 'seg-small'), step(1, 'Larger text', 'seg-large'));
+
+  const page = el('div', 'settings');
+  page.append(
+    part(
+      'Library',
+      '',
+      null,
+      row('Appearance', look, { more: 'For the library. What you read has its own theme.' }),
+      row('Location', reveal, { more: about?.folder ?? '' }),
+    ),
+    part(
+      'Text',
+      'How books and articles are set. These are the same choices as the text button gives while you read.',
+      sample,
+      row('Theme', dots, { value: () => THEMES.find(([id]) => id === worn())[1] }),
+      row('Typeface', text('face', FACES, (button, [, , family]) => (button.style.fontFamily = family))),
+      row('Size', size, { value: () => String(setting.size), number: true }),
+      row('Spacing', text('spacing', SPACINGS)),
+      row('Width', text('width', WIDTHS)),
+    ),
+    part(
+      'Reading',
+      'Scrolling, or one page at a time, chosen apart for books and for articles. A PDF always scrolls.',
+      null,
+      row('Books', text('reading', READINGS)),
+      row('Articles', text('readingArticles', READINGS)),
+    ),
+    el('p', 'set-foot', about ? 'Inquisitive ' + about.version : ''),
+  );
+  sync();
+  settled = sync;
+  return page;
+}
+
+// With no theme chosen for reading, the one ringed is the app's own, which can change.
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => tab.settings && settled?.());
+
 for (const button of document.querySelectorAll('#rail [data-tab]')) {
   button.addEventListener('click', () => choose(button.dataset.tab));
 }
@@ -2534,8 +3118,17 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
     return openFind();
   }
+  // Read in pages, the arrows, the space bar and Page Up and Down turn the page.
+  if (book?.leaf && !menu && !dialog && !panel && !finder && !lister && !picker && !e.metaKey && !e.ctrlKey && !e.altKey && !e.target.isContentEditable && !e.target.matches?.('input, textarea')) {
+    const by = { ArrowRight: 1, ArrowDown: 1, PageDown: 1, ' ': e.shiftKey ? -1 : 1, ArrowLeft: -1, ArrowUp: -1, PageUp: -1 }[e.key];
+    if (by && !(e.key === ' ' && e.target.closest?.('button'))) { // (the space bar on a button presses the button)
+      e.preventDefault();
+      return turnPage(by);
+    }
+  }
   if (e.key !== 'Escape') return;
-  if (picker) closePicker(); // Escape puts the row of colours away,
+  if (noter) closeNote(); // Escape puts a note of the book's away,
+  else if (picker) closePicker(); // or the row of colours,
   else if (menu) closeMenu(); // or closes a menu,
   else if (dialog) closeDialog(); // or a dialog,
   else if (panel) closePanel(); // or the text panel,

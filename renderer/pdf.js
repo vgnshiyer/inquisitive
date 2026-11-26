@@ -50,8 +50,8 @@ window.Pdf = {
   /** Draws one page (counted from 1) to a new canvas, sharp at this many pixels wide on
       screen. With it comes the page's words: an unseen copy of its text, each run laid
       exactly over its picture on the canvas, which is what the pointer selects and what is
-      copied. (A scanned page has no words to give.) Gives the canvas, the words, and the
-      page's shape. */
+      copied. (A scanned page has no words to give.) Gives the canvas, the words, the
+      page's links, and its shape. */
   async draw(doc, number, width) {
     const page = await doc.getPage(number);
     const flat = page.getViewport({ scale: 1 });
@@ -65,7 +65,37 @@ window.Pdf = {
     const scale = Math.max(1, width) / flat.width; // screen pixels to one of the page's own points
     words.style.setProperty('--total-scale-factor', String(scale));
     await new pdfjs.TextLayer({ textContentSource: page.streamTextContent({ includeMarkedContent: true, disableNormalization: true }), container: words, viewport: page.getViewport({ scale }) }).render().catch(() => {});
-    return { canvas, words, shape: flat.width / flat.height };
+    // Its links: where each lies on the page (as parts of its width and height), and where
+    // it leads: out to the web, or to a place in the PDF.
+    const links = [];
+    for (const mark of await page.getAnnotations().catch(() => [])) {
+      if (mark.subtype !== 'Link' || !mark.rect || !(mark.url || mark.dest)) continue;
+      const [left, top] = flat.convertToViewportPoint(mark.rect[0], mark.rect[1]);
+      const [right, foot] = flat.convertToViewportPoint(mark.rect[2], mark.rect[3]);
+      const box = [Math.min(left, right) / flat.width, Math.min(top, foot) / flat.height, Math.abs(right - left) / flat.width, Math.abs(foot - top) / flat.height];
+      links.push(mark.url ? { box, out: mark.url } : { box, dest: mark.dest });
+    }
+    return { canvas, words, links, shape: flat.width / flat.height };
+  },
+
+  /** Where a link within a PDF leads: the page (counted from 0), and how far down it (0 at
+      its top, 1 at its foot). Nothing, if it leads nowhere. */
+  async place(doc, dest) {
+    try {
+      // To a named place, or straight to a page (by reference, or by number).
+      const to = typeof dest === 'string' ? await doc.getDestination(dest) : dest;
+      if (to?.[0] == null) return null;
+      const section = typeof to[0] === 'object' ? await doc.getPageIndex(to[0]) : to[0];
+      if (!(section >= 0 && section < doc.numPages)) return null;
+      // How far down, where the place says: the page's top otherwise.
+      const how = to[1]?.name;
+      const height = how === 'XYZ' ? to[3] : how === 'FitH' || how === 'FitBH' ? to[2] : how === 'FitR' ? to[5] : null;
+      if (typeof height !== 'number') return { section, part: 0 };
+      const flat = (await doc.getPage(section + 1)).getViewport({ scale: 1 });
+      return { section, part: Math.max(0, Math.min(1, flat.convertToViewportPoint(0, height)[1] / flat.height)) };
+    } catch {
+      return null;
+    }
   },
 
   /** One page's words (counted from 1) as they are searched: its runs of text one after

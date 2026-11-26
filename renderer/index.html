@@ -58,6 +58,12 @@
       <article id="page"></article>
       <!-- The notes written on what is highlighted, set in the margins beside it. -->
       <div id="margin"></div>
+      <!-- Read in pages: the arrows that turn one, at either side when the pointer is there. -->
+      <button class="turner" type="button" data-by="-1" aria-label="Previous page"><span class="icon" aria-hidden="true"></span></button>
+      <button class="turner" type="button" data-by="1" aria-label="Next page"><span class="icon" aria-hidden="true"></span></button>
+      <!-- Read in pages: the chapter above the page, and the page's number under it. -->
+      <span id="running"></span>
+      <span id="folio"></span>
       <span id="place"></span>
     </main>
 

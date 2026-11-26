@@ -8,6 +8,16 @@ contextBridge.exposeInMainWorld('api', {
   watchPointer: (on) => ipcRenderer.send('watch-pointer', Boolean(on)),
   onPointer: (told) => ipcRenderer.on('pointer', (event, zone) => told(zone)),
 
+  // The Settings page: what it shows of the app, and what it changes.
+  settings: {
+    /** The app's version, whether it is light or dark ('system', 'light' or 'dark'), and where the library is. */
+    load: () => ipcRenderer.invoke('settings:load'),
+    /** Make the app light or dark, or have it follow the Mac. */
+    appearance: (look) => ipcRenderer.send('settings:appearance', String(look)),
+    /** Show the library's folder in the Finder. */
+    reveal: () => ipcRenderer.send('settings:reveal'),
+  },
+
   // The library (library.js): what is kept, and the books themselves.
   library: {
     /** The items and collections kept. */
