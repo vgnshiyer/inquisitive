@@ -38,7 +38,7 @@ function createWindow() {
     // The window draws its own top bar, beside the window buttons.
     titleBarStyle: 'hidden',
     trafficLightPosition: LIGHTS,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#181613' : '#f5f1e8', // --paper in style.css
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#181613' : '#f6f1e6', // --paper in style.css
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

@@ -3,8 +3,8 @@
    them (the window, the top bar, a PDF's sheets, the text) reads them as they go, and so is
    always the same colour as everything else. Nothing has a fade of its own to fall out of
    step with. */
-@property --paper { syntax: '<color>'; inherits: true; initial-value: #f5f1e8; }
-@property --ink { syntax: '<color>'; inherits: true; initial-value: #2a2622; }
+@property --paper { syntax: '<color>'; inherits: true; initial-value: #f6f1e6; }
+@property --ink { syntax: '<color>'; inherits: true; initial-value: #40332a; }
 @property --raised { syntax: '<color>'; inherits: true; initial-value: #fbf9f4; }
 @property --leaf-light { syntax: '<number>'; inherits: true; initial-value: 0.9; }
 @property --leaf-opacity { syntax: '<number>'; inherits: true; initial-value: 1; }
@@ -13,18 +13,24 @@
 @property --rail-width { syntax: '<length>'; inherits: true; initial-value: 56px; }
 
 :root {
-  /* Colours: warm paper and ink. Everything else is mixed from these. */
-  --paper: #f5f1e8;
-  --ink: #2a2622;
-  --soft: color-mix(in srgb, var(--ink) 66%, var(--paper));
-  --muted: color-mix(in srgb, var(--ink) 44%, var(--paper));
-  --line: color-mix(in srgb, var(--ink) 14%, transparent); /* the one outline colour */
-  --hover: color-mix(in srgb, var(--ink) 6%, transparent);
+  /* Colours: cream paper and a brown ink. Everything else is mixed from these. */
+  --paper: #f6f1e6;
+  --ink: #40332a;
+  /* How much ink goes into each of those. The amounts differ from paper to paper (below), so
+     that each reads as strongly on every one: the same step for what is pointed at, the same
+     for what is chosen, and quiet text that is as easy to read on a light paper as a dark. */
+  --soft-mix: 75.5%; /* quieter text */
+  --muted-mix: 60%; /* the quietest: labels and captions */
+  --line-mix: 15.5%; /* outlines */
+  --hover-mix: 9%; /* behind what is pointed at */
+  --press-mix: 14.5%; /* behind what is chosen: a step more */
+  --wash: 48%; /* how much of its colour a highlight lays over the page */
+  --select: rgba(31, 111, 229, 0.36); /* behind selected text: the one colour that is not paper, ink or a collection's */
   --tint: 16%; /* how much of its colour a card takes */
   --raised: color-mix(in srgb, #fff 55%, var(--paper)); /* a menu's surface, a step above the paper */
   --shadow: 0 10px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06); /* and what it casts */
   --shadow-small: 0 4px 14px rgba(0, 0, 0, 0.1); /* what a tip casts */
-  --veil: rgba(0, 0, 0, 0.24); /* what dims the window behind a dialog */
+  --veil: rgba(64, 51, 42, 0.28); /* what dims the window behind a dialog: the ink, thinly */
   --danger: #b8442f; /* for what removes something */
 
   /* Type: a serif for titles, a grotesk for everything else, a mono for numbers. */
@@ -64,6 +70,13 @@
   :root {
     --paper: #181613;
     --ink: #ece6da;
+    --soft-mix: 66%;
+    --muted-mix: 44%;
+    --line-mix: 14%;
+    --hover-mix: 6%;
+    --press-mix: 9%;
+    --wash: 42%;
+    --select: rgba(74, 144, 240, 0.42);
     --tint: 12%;
     --raised: color-mix(in srgb, var(--ink) 7%, var(--paper));
     --shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
@@ -79,7 +92,7 @@
    something is being read the window wears the one chosen (app.js marks the root); the dots
    that choose between them wear theirs always. Light and Dark are the app's own. */
 [data-theme='white'] { --paper: #ffffff; --ink: #1c1b1a; }
-[data-theme='light'] { --paper: #f5f1e8; --ink: #2a2622; }
+[data-theme='light'] { --paper: #f6f1e6; --ink: #40332a; }
 [data-theme='sepia'] { --paper: #eadfc8; --ink: #3a2f22; }
 [data-theme='dusk'] { --paper: #3b3936; --ink: #c2bcb0; }
 [data-theme='dark'] { --paper: #181613; --ink: #ece6da; }
@@ -97,6 +110,7 @@
 [data-theme='light'],
 [data-theme='sepia'] {
   --tint: 16%;
+  --select: rgba(31, 111, 229, 0.36);
   --raised: color-mix(in srgb, #fff 55%, var(--paper));
   --shadow: 0 10px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06);
   --shadow-small: 0 4px 14px rgba(0, 0, 0, 0.1);
@@ -109,6 +123,7 @@
 [data-theme='dark'],
 [data-theme='black'] {
   --tint: 12%;
+  --select: rgba(74, 144, 240, 0.42);
   --raised: color-mix(in srgb, var(--ink) 7%, var(--paper));
   --shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-small: 0 4px 16px rgba(0, 0, 0, 0.45);
@@ -116,6 +131,27 @@
   --tone: dark;
   --leaf-light: 0.9;
   color-scheme: dark;
+}
+
+/* And each its own amounts of ink (see the root), worked out so that on every paper what is
+   pointed at stands out by the same step, what is chosen by the same larger one, quiet text
+   is as easy to read, and the ink is easy to read on a highlight. */
+[data-theme='white'] { --soft-mix: 66%; --muted-mix: 53%; --line-mix: 14%; --hover-mix: 7.5%; --press-mix: 12%; --wash: 42%; }
+[data-theme='light'] { --soft-mix: 75.5%; --muted-mix: 60%; --line-mix: 15.5%; --hover-mix: 9%; --press-mix: 14.5%; --wash: 48%; }
+[data-theme='sepia'] { --soft-mix: 76%; --muted-mix: 62%; --line-mix: 16%; --hover-mix: 9.5%; --press-mix: 15%; --wash: 58%; }
+[data-theme='dusk'] { --soft-mix: 84%; --muted-mix: 66%; --line-mix: 14%; --hover-mix: 10%; --press-mix: 16%; --wash: 30%; --select: rgba(74, 144, 240, 0.32); }
+[data-theme='dark'] { --soft-mix: 66%; --muted-mix: 44%; --line-mix: 14%; --hover-mix: 6%; --press-mix: 9%; --wash: 42%; }
+[data-theme='black'] { --soft-mix: 66%; --muted-mix: 50%; --line-mix: 17%; --hover-mix: 9.5%; --press-mix: 13%; --wash: 40%; }
+
+/* The colours mixed from a paper and its ink, wherever either is given: at the root, and on
+   whatever wears a theme of its own. */
+:root,
+[data-theme] {
+  --soft: color-mix(in srgb, var(--ink) var(--soft-mix), var(--paper));
+  --muted: color-mix(in srgb, var(--ink) var(--muted-mix), var(--paper));
+  --line: color-mix(in srgb, var(--ink) var(--line-mix), transparent); /* the one outline colour */
+  --hover: color-mix(in srgb, var(--ink) var(--hover-mix), transparent);
+  --press: color-mix(in srgb, var(--ink) var(--press-mix), transparent);
 }
 
 /* How light a turned-over page's marks are: about the theme's ink. */
@@ -355,7 +391,7 @@ body[data-rail='wide'] .tab-name {
 
 /* The tab you are in: its icon is the filled one. */
 .tab[aria-current='true'] {
-  background: color-mix(in srgb, var(--ink) 9%, transparent);
+  background: var(--press);
   color: var(--ink);
   font-weight: 500;
 }
@@ -1204,7 +1240,7 @@ body > main[hidden] {
 
 /* With files held over it. */
 .add-drop.over {
-  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  background: var(--press);
   box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ink) 40%, transparent);
 }
 
@@ -1492,7 +1528,7 @@ body > main[hidden] {
 }
 
 .set-button:hover {
-  background: color-mix(in srgb, var(--ink) 11%, transparent);
+  background: var(--press);
 }
 
 .set-button:focus-visible {
@@ -2135,7 +2171,7 @@ body[data-screen='reading'] #top {
 
 .turner:hover,
 .turner:focus-visible {
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  background: var(--hover);
   color: var(--ink);
 }
 
@@ -2145,10 +2181,6 @@ body[data-screen='reading'] #top {
 #page ::highlight(light-2) { background-color: color-mix(in srgb, var(--hue-2) var(--wash), transparent); }
 #page ::highlight(light-3) { background-color: color-mix(in srgb, var(--hue-3) var(--wash), transparent); }
 #page ::highlight(light-5) { background-color: color-mix(in srgb, var(--hue-5) var(--wash), transparent); }
-
-#page {
-  --wash: 42%;
-}
 
 /* A note on a highlight, in the margin beside it (app.js places it): small, in the app's own
    type, and on the left set against the text. Being written, it is in the ink. */
@@ -2335,7 +2367,7 @@ body[data-screen='reading'] #top {
 }
 
 .notepop ::selection {
-  background: color-mix(in srgb, var(--ink) 30%, transparent);
+  background: var(--select);
 }
 
 /* What find has found is marked with the theme's ink too: each lightly, and the one gone to
@@ -2355,10 +2387,11 @@ body[data-screen='reading'] #top {
   color: transparent;
 }
 
-/* What is selected on the page is washed with the theme's ink: the same in a book, an
-   article and a PDF (whose own rule, further down, also hides the unseen words over it). */
+/* What is selected on the page is washed with the one selection colour (the root's, or the
+   theme's): the same in a book, an article and a PDF (whose own rule, further down, also
+   hides the unseen words over it). It lets a highlight under it show through. */
 #page ::selection {
-  background: color-mix(in srgb, var(--ink) 30%, transparent);
+  background: var(--select);
 }
 
 @keyframes arrive {
@@ -2664,7 +2697,7 @@ body[data-screen='reading'] #top {
 }
 
 .words ::selection {
-  background: color-mix(in srgb, var(--ink) 30%, transparent);
+  background: var(--select);
   color: transparent;
 }
 
