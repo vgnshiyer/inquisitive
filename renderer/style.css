@@ -453,21 +453,23 @@ body[data-rail='wide'] .tab-name {
 .tab[data-tab='library'] .icon { mask-image: url(icons/book-minimalistic-linear.svg); }
 .tab[data-tab='finished'] .icon { mask-image: url(icons/check-circle-linear.svg); }
 .tab[data-tab='collections'] .icon { mask-image: url(icons/library-linear.svg); }
+.tab[data-tab='settings'] .icon { mask-image: url(icons/settings-minimalistic-linear.svg); }
 
 .tab[data-tab='home'][aria-current='true'] .icon { mask-image: url(icons/home-2-bold.svg); }
 .tab[data-tab='library'][aria-current='true'] .icon { mask-image: url(icons/book-minimalistic-bold.svg); }
 .tab[data-tab='finished'][aria-current='true'] .icon { mask-image: url(icons/check-circle-bold.svg); }
 .tab[data-tab='collections'][aria-current='true'] .icon { mask-image: url(icons/library-bold.svg); }
+.tab[data-tab='settings'][aria-current='true'] .icon { mask-image: url(icons/settings-minimalistic-bold.svg); }
 
 .tab.foot {
   margin-top: auto;
 }
 
-/* Settings' icon is the app's own mark, the asterisk of its name: a letter, not a drawing, so
-   it is set as text where the icon would be (in the opening's face: opening.css). Its arms
-   stand a little under the middle of its line, which the nudge upward makes up. It has one
-   form: in Settings, the tab's wash and darker ink say so. */
-.tab[data-tab='settings'] .icon {
+/* The assistant's icon is the app's own mark, the asterisk of its name: a letter, not a
+   drawing, so it is set as text where an icon would be (in the opening's face: opening.css),
+   as <span class="icon asterisk">*</span>. Its arms stand a little under the middle of its
+   line, which the nudge upward makes up. It has one form. */
+.icon.asterisk {
   position: relative;
   top: -0.026em;
   background: none;
