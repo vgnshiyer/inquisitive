@@ -3603,12 +3603,33 @@ body[data-chat] #chat {
 }
 
 #chat-inner {
+  position: relative; /* (its head and the mist under it lie over the thread) */
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
   width: var(--chat-width);
   height: 100%;
   border-left: 1px solid var(--line);
+}
+
+/* As with a page and the top bar: the thread runs under the chat's head to the top of the
+   window, and a mist between the two blurs what is beneath and washes it with the paper,
+   fully behind the head's buttons and then less and less down to where the thread's first
+   line stands (58px), so that what is said does not end at an edge. */
+#chat-inner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 1;
+  height: 58px;
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 36px, transparent);
+  mask-image: linear-gradient(to bottom, #000 36px, transparent);
+  pointer-events: none;
 }
 
 #top {
@@ -3667,8 +3688,12 @@ body.chat-sizing {
    called, then the chats about this item, a new one, and the way to put it away. */
 #chat-head {
   -webkit-app-region: drag;
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 2;
   display: flex;
-  flex: none;
   align-items: center;
   gap: 2px;
   height: 44px;
@@ -3699,7 +3724,7 @@ body.chat-sizing {
   flex-direction: column;
   gap: 14px;
   min-height: 0;
-  padding: 8px 16px 16px;
+  padding: 58px 16px 16px; /* (its first line stands clear of the head, and of the mist under it) */
   overflow-y: auto;
   cursor: auto;
   user-select: text;
@@ -3756,6 +3781,270 @@ body.chat-sizing {
 /* (While an answer is awaited, the asterisk ticks where its first words will be.) */
 .chat-words > .tick {
   margin: 0;
+}
+
+/* An answer is written out as the page's own things (app.js): paragraphs, a list, a small
+   table, a little code. Each stands a little apart from the next, and the first and last
+   keep to the answer's own edges. */
+.chat-words {
+  white-space: normal;
+}
+
+.chat-words :is(p, ul, ol, blockquote, pre, table, figure) {
+  margin: 0 0 0.7em;
+}
+
+.chat-words > :first-child {
+  margin-top: 0;
+}
+
+.chat-words > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-words :is(ul, ol) {
+  padding-left: 1.35em;
+}
+
+.chat-words li {
+  margin: 0.2em 0;
+}
+
+.chat-words li > :is(p, ul, ol) {
+  margin-bottom: 0;
+}
+
+/* (A list's numbers are the words' own figures, not the evenly spaced ones a list has otherwise.) */
+.chat-words li::marker {
+  color: var(--soft);
+  font-variant-numeric: normal;
+}
+
+/* (A heading is no larger than the words: an answer is too short a thing for a title.) */
+.chat-words :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1em 0 0.35em;
+  font-size: inherit;
+  font-weight: 600;
+  line-height: inherit;
+}
+
+.chat-words :is(strong, b, th) {
+  font-weight: 600;
+}
+
+.chat-words code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: var(--hover);
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.chat-words pre {
+  padding: 9px 11px;
+  overflow-x: auto;
+  border-radius: 10px;
+  background: var(--hover);
+  white-space: pre;
+}
+
+.chat-words pre code {
+  padding: 0;
+  background: none;
+}
+
+.chat-words blockquote {
+  padding-left: 10px;
+  border-left: 2px solid color-mix(in srgb, var(--ink) 30%, transparent);
+  color: var(--soft);
+}
+
+.chat-words table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: calc(var(--text-size) - 1px);
+}
+
+.chat-words :is(th, td) {
+  padding: 5px 12px 5px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.chat-words hr {
+  height: 1px;
+  margin: 0.9em 0;
+  border: 0;
+  background: var(--line);
+}
+
+/* A link: out to the web, or (the same to look at) to a place in what is being read. */
+.chat-words a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--ink) 35%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.chat-words a:hover {
+  text-decoration-color: currentColor;
+}
+
+/* A drawing in an answer: as wide as the column, on a plate of pale paper in dark ink
+   whatever the app's own colours are (as a figure is printed in a book), since the colours
+   in it were chosen for that. What in it is given no colour is in that ink. While it is
+   still being written there is a line in its place, in the app's colours. */
+.chat-drawing {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f6f1e6;
+  color: #40332a;
+}
+
+.chat-drawing svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  fill: currentColor;
+  font-family: inherit;
+}
+
+.chat-drawing.coming {
+  display: flex;
+  align-items: center;
+  background: none;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 1px);
+}
+
+/* Over an answer, what was looked at in the book to give it (and, while it is, what is being
+   looked at, with the asterisk ticking). */
+.chat-looked {
+  display: flex;
+  align-items: center;
+  margin: 0 0 5px;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 1px);
+}
+
+.chat-looked[hidden] {
+  display: none;
+}
+
+/* (Beside a word the asterisk stands a hair high, as elsewhere.) */
+.chat-looked .tick,
+.chat-drawing .tick {
+  translate: 0 -1px;
+}
+
+/* Under an answer, the ways to copy it and to have it answered again: they show while the
+   pointer is on the answer, and stay under the latest. Only the latest can be asked again. */
+.chat-acts {
+  display: flex;
+  gap: 2px;
+  margin: 4px 0 0 -5px;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+/* (Under an earlier answer they take up little of the room between it and the next question.) */
+.chat-answer:not(:last-child) .chat-acts {
+  margin-bottom: -10px;
+}
+
+.chat-answer:is(:hover, :focus-within, :last-child) .chat-acts,
+.chat-acts.shown {
+  opacity: 1;
+}
+
+.chat-acts.shown {
+  margin-top: -8px;
+}
+
+.chat-act {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.chat-act:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.chat-act .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.chat-act[data-act='copy'] .icon { mask-image: url(icons/copy-linear.svg); }
+.chat-act[data-act='copy'].done .icon { mask-image: url(icons/check-linear.svg); }
+.chat-act[data-act='again'] .icon { mask-image: url(icons/restart-linear.svg); }
+
+.chat-answer:not(:last-child) .chat-act[data-act='again'] {
+  display: none;
+}
+
+/* Where the part of a long chat that the model has only in summary ends: a line across, with a word in it. */
+.chat-divide {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 2px);
+}
+
+.chat-divide::before,
+.chat-divide::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+/* In a chat with nothing in it yet, what can be asked with a click: at the foot, over the field. */
+.chat-starts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: auto;
+}
+
+.chat-start {
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--soft);
+  text-align: left;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.chat-start:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+/* (While the chat's name is being written over, it is a field: not something to move the window by.) */
+#chat-title[contenteditable='plaintext-only'] {
+  -webkit-app-region: no-drag;
+  outline: 0;
+  text-overflow: clip;
+  cursor: text;
+  user-select: text;
 }
 
 /* Where to ask: a field that grows with what is written, on a wash, with the button that

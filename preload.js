@@ -82,12 +82,18 @@ contextBridge.exposeInMainWorld('api', {
     list: (file) => ipcRenderer.invoke('chats:list', file),
     /** A chat and everything said in it: { chat, messages }, or null. */
     read: (id) => ipcRenderer.invoke('chats:read', id),
-    /** Ask in a chat, and keep the question and the answer: `request` is { chat, text, quote, about }, or { file, text, quote, about } to begin a new chat about an item; `about` is { title, author }, which the model is told. The model in use answers (connections). What happens comes to `onPart` under this id. */
+    /** Ask in a chat, and keep the question and the answer: `request` is { chat, text, quote, about }, or { file, text, quote, about } to begin a new chat about an item; `about` is { title, author }, which the model is told. With { chat, again: true, about }, the chat's last question is asked once more, and its answer gives way to the new one. The model in use answers (connections). What happens comes to `onPart` under this id. */
     ask: (id, request) => ipcRenderer.send('chats:ask', String(id), request),
     /** Stop an answer that is coming: what had come of it is kept. */
     stop: (id) => ipcRenderer.send('chats:stop', String(id)),
-    /** Hear of what happens: (id, part), where part is { chat, question }, { delta }, { done, answer }, { stopped, answer } or { error, code, answer }. */
+    /** Hear of what happens: (id, part), where part is { chat, question }, { delta }, { looking } (the model has gone to look at the book: the answer's words begin again), { done, answer }, { stopped, answer } or { error, code, answer }. */
     onPart: (hear) => ipcRenderer.on('chats:part', (event, id, part) => hear(id, part)),
+    /** Hear the model ask to look at the book that is open: (key, id, name, input), where `id` is the ask it is answering and `name` one of 'contents', 'read' ({ section, from }), 'search' ({ query }), 'place' and 'highlights'. Answer with `looked`. */
+    onLook: (hear) => ipcRenderer.on('chats:look', (event, key, id, name, input) => hear(key, id, name, input)),
+    /** What a look found, in words; and what was looked at, in a few words for the reader. */
+    looked: (key, text, label) => ipcRenderer.send('chats:looked', String(key), String(text), String(label ?? '')),
+    /** Whether the model in use can look at the book itself. */
+    sees: () => ipcRenderer.invoke('chats:sees'),
     /** Call a chat something else. */
     rename: (id, title) => ipcRenderer.invoke('chats:rename', id, title),
     /** Take a chat away. */

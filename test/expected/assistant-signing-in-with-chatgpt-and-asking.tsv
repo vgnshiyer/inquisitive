@@ -1,0 +1,44 @@
+at first	"{\"signedIn\":false,\"way\":null,\"email\":\"\",\"name\":\"\",\"waiting\":false,\"sealed\":false}"
+row	"[[\"Connect\"],\"Sign in to ask about what you read.\"]"
+signed in	{"result":{"signedIn":true,"way":"plan","email":"reader@example.com","name":"A Reader","waiting":false,"sealed":false},"page":[200,"You are signed in"]}
+asked the sign-in page	{"client_id":"dynamic_agent_client","agent_name_hint":"Inquisitive","host":true,"redirect":true,"scope":"openid profile email offline_access resource.invoke chatgpt.tokens.use.direct","resource":true,"method":"S256","hasState":true,"hasNonce":true}
+traded the code	{"grant":"authorization_code","client":"oaiapp_test123","verifier":43,"resource":true}
+kept	{"host":"urn:uuid:","client":"oaiapp_test123","who":{"sub":"user-123","email":"reader@example.com","name":"A Reader"},"tokens":["access","refresh","expires","scopes"],"sealed":false,"mode":"600"}
+row (2)	"[[\"\",\"\"],\"reader@example.com\"]"
+models	"{\"models\":[{\"id\":\"gpt-6.1-sol\",\"name\":\"GPT-6.1 Sol\",\"levels\":[\"low\",\"medium\",\"high\"]},{\"id\":\"gpt-6.1-terra\",\"name\":\"GPT-6.1 Terra\",\"levels\":[]}]}"
+an answer	{"deltas":7,"last":{"done":true,"text":"Hello, world. You said: What is this?","model":"gpt-6.1-sol","usage":null}}
+what was asked	{"body":{"model":"gpt-6.1-sol","input":[{"role":"developer","content":"Be brief."},{"role":"user","content":[{"type":"input_text","text":"Earlier question"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Earlier answer","annotations":[]}],"status":"completed","id":"msg_pi_1"},{"role":"user","content":[{"type":"input_text","text":"What is this?"}]}],"stream":true,"prompt_cache_key":"thread-1","store":false,"max_output_tokens":128000},"headers":{"session-id":"thread-1","thread-id":"thread-1"}}
+three asks on a spent token	[true,true,true,"renewals",1]
+token replaced and kept	["rt_1","rt_2",true]
+over the limit	{"error":"You have reached your ChatGPT plan’s limit for now.","code":"subscription_sharing_usage_limit_exceeded","usage":"https://chatgpt.com/settings/usage","text":""}
+failed midway	{"error":"ChatGPT plan usage is not available just now. Try again in a little while.","code":"subscription_sharing_usage_unavailable","text":"Hello, wo"}
+cut short	{"error":"The answer stopped before it was finished.","code":"cut-short","text":"Hello, world. You said: CUT"}
+stopped	{"deltas":5,"last":{"stopped":true,"text":15}}
+signed out	"{\"signedIn\":false,\"way\":null,\"email\":\"\",\"name\":\"\",\"waiting\":false,\"sealed\":false,\"confirmed\":true}"
+revoked	{"token":"rt_2","token_type_hint":"refresh_token","client_id":"oaiapp_test123"}
+kept after	{"host":true,"client":"oaiapp_test123","who":null,"tokens":false}
+asking signed out	{"error":"Sign in with ChatGPT first.","code":"signed-out"}
+signed in again	{"signedIn":true,"client_id":"oaiapp_test123","hint":null,"sameHost":true}
+renewal refused	{"error":"Your ChatGPT sign-in has run out. Sign in again.","code":"signed-out"}
+status after	"{\"signedIn\":false,\"way\":null,\"email\":\"\",\"name\":\"\",\"waiting\":false,\"sealed\":false}"
+refused in the browser	{"result":{"why":"The sign-in was cancelled."},"page":[400,"Not signed in"]}
+without leave to use the plan	{"why":"The sign-in finished without leave to use your ChatGPT plan. Sign in again and allow it."}
+an ID token for another sign-in	{"why":"The sign-in could not be finished: the ID token is not for this sign-in."}
+nothing kept from those	{"tokens":false,"status":false}
+refused once, then through	{"result":true,"page":[200,"You are signed in"],"asked":[["dynamic_agent_client","Inquisitive"],["oaiapp_second",null]],"differentSecrets":true,"kept":"oaiapp_second"}
+refused twice	{"result":{"why":"ChatGPT would not finish the sign-in (invalid_grant). Try again."},"kept":"oaiapp_third","tokens":false}
+the next try	{"signedIn":true,"asked":"oaiapp_third"}
+codex: signed in	{"result":{"signedIn":true,"way":"codex","email":"reader@example.com","name":"A Reader","waiting":false,"sealed":false},"page":[200,"You are signed in"]}
+codex: asked the sign-in page	{"client_id":"app_EMoamEEZ73f0CkXaXp7hrann","redirect":"http://localhost:PORT/auth/callback","scope":"openid profile email offline_access","flow":"true","orgs":"true","originator":"inquisitive","method":"S256"}
+codex: traded the code	{"fields":["client_id","code","code_verifier","grant_type","redirect_uri"],"client":"app_EMoamEEZ73f0CkXaXp7hrann"}
+codex: kept	{"way":"codex","account":"acct_42","who":"reader@example.com","planClient":"oaiapp_third"}
+codex: models	"{\"models\":[{\"id\":\"gpt-6.2-sol\",\"name\":\"GPT-6.2 Sol\",\"levels\":[]}]}"
+codex: an answer	{"done":true,"text":"From Codex: What is this?","model":"gpt-6.2-sol","usage":null}
+codex: what was asked	{"body":{"model":"gpt-6.2-sol","store":false,"stream":true,"input":[{"role":"developer","content":"You are a well-read companion to someone reading a book, an article or a paper. Answer plainly and briefly."},{"role":"user","content":[{"type":"input_text","text":"Earlier question"}]},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Earlier answer","annotations":[]}],"status":"completed","id":"msg_pi_1"},{"role":"user","content":[{"type":"input_text","text":"What is this?"}]}],"text":{"verbosity":"medium"},"include":["reasoning.encrypted_content"],"prompt_cache_key":"thread-1","tool_choice":"auto","parallel_tool_calls":true,"max_output_tokens":128000},"headers":{"originator":"inquisitive","account":"acct_42","session-id":"thread-1","squeezed":true}}
+codex: over the limit	{"error":"You have reached your ChatGPT plan’s limit for now.","code":"usage_limit_reached","usage":"https://chatgpt.com/settings/usage","text":""}
+codex: renewed	[true,1,"refresh_token",true]
+codex: models not listed	"{\"models\":[{\"id\":\"gpt-6.2-sol\",\"name\":\"gpt-6.2-sol\",\"levels\":[]},{\"id\":\"gpt-6.1-sol\",\"name\":\"gpt-6.1-sol\",\"levels\":[]},{\"id\":\"gpt-6-sol\",\"name\":\"gpt-6-sol\",\"levels\":[]},{\"id\":\"gpt-5.6-sol\",\"name\":\"gpt-5.6-sol\",\"levels\":[]}]}"
+codex: signed out	"{\"signedIn\":false,\"way\":null,\"email\":\"\",\"name\":\"\",\"waiting\":false,\"sealed\":false,\"confirmed\":null}"
+codex: kept after	{"way":null,"tokens":false,"planClient":"oaiapp_third"}
+given up	"{\"none\":true}"
+logs	"[]"

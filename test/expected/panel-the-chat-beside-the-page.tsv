@@ -1,0 +1,36 @@
+1 before	{"reading":[0,0,1180,780],"top":[0,0,1180,44],"tool":[1139,6,1171,38]}
+~1 slide
+1 opened	{"open":true,"title":"New chat","busy":false,"send":"Ask","field":"","quote":null,"focus":"chat-field"}
+1 layout	{"reading":[0,0,826,780],"top":[0,0,826,44],"chat":[826,0,1180,780],"head":[827,0,1180,44],"form":[839,724,1168,768],"win":"1180x780"}
+2 typed	{"open":true,"title":"New chat","busy":false,"send":"Ask","field":"What is this essay about?","quote":null,"focus":"chat-field"}
+~2 as it came
+2 thread	[["chat-asked",null,"What is this essay about?",null,false],["chat-answer",null,"Hello, world. You said: What is this essay about?\n",null,false]]
+2 state	{"open":true,"title":"What is this essay about?","busy":false,"send":"Ask","field":"","quote":null,"focus":"chat-field"}
+2 the model was told	["\"You are a well-read companion to someone reading a book, an article or a paper. Answer plainly and briefly. Write in Markdown, and lightly: a short list or a small table where it truly helps, and no ",1]
+3 shift-return	"\"SLOW one\\n\""
+3 while it comes	{"open":true,"title":"What is this essay about?","busy":true,"send":"Stop","field":"","quote":null,"focus":"chat-field"}
+3 stopped	[["chat-asked",null,"SLOW one\nmore",null,false],["chat-answer",null,"w0 w1 w2 w3 w4 w5 w6 \n","Stopped",false]]
+3 state	{"open":true,"title":"What is this essay about?","busy":false,"send":"Ask","field":"","quote":null,"focus":"chat-field"}
+3 empty asks nothing	4
+4 the row	"[\"Add a note\",\"Ask about this\"]"
+4 passage over the field	{"open":true,"title":"What is this essay about?","busy":false,"send":"Ask","field":"","quote":"Ada Example · 127.0.0.1","focus":"chat-field"}
+4 thread	[["chat-asked","Ada Example · 127.0.0.1","Why this?",null,false],["chat-answer",null,"Hello, world. You said: > Ada Example · 127.0.0.1\nWhy this?\n",null,false]]
+4 what went out	"[{\"type\":\"input_text\",\"text\":\"> Ada Example · 127.0.0.1\\n\\nWhy this?\"}]"
+5 Escape: sliding away	[false,[1180,0,1180,780],"visible"]
+5 Escape closes it	[false,"reading",[0,0,1180,780],"hidden true"]
+5 opened again	["What is this essay about?",6]
+5 new chat	[{"open":true,"title":"What is this essay about?","busy":false,"send":"Ask","field":"","quote":null,"focus":""},6]
+5 chats	["What is this essay about?*","","Rename","Delete"]
+5 the first again	["What is this essay about?",6]
+5b cursor	"col-resize"
+5b dragged	{"start":826,"to700":[700,700],"to650":[650,650],"tooFar":[540,540],"tooNear":[900,900],"back":[760,760]}
+5b kept	["420",[760,0,1180,780],0]
+5b double click	[null,[826,0,1180,780],"[\"\",\"calc(clamp(280px, clamp(300px, 30vw, 380px), max(280px, 100vw - 360px)) * 1)\",\"clamp(280px, clamp(300px, 30vw, 380px), max(280px, 100vw - 360px))\",\"\",1180]"]
+6 passage dropped	null
+6 left the book	[false,false,[0,0,1180,44]]
+6 another item	[{"open":true,"title":"New chat","busy":false,"send":"Ask","field":"","quote":null,"focus":"chat-field"},1]
+6 its chats	["No chats yet"]
+7 paged	"{\"paged\":true,\"part\":540,\"reading\":826}"
+8 no model	[["chat-asked",null,"Anyone?",null,false],["chat-state wrong",null,"No model is connected. Connect one in Settings.",null,false]]
+8 kept	"[[\"What is this essay about?\",6]]"
+logs	"[]"

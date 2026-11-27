@@ -101,6 +101,8 @@
 
     <!-- DOMPurify cleans what comes out of a book before it is put on the page. -->
     <script src="../node_modules/dompurify/dist/purify.min.js"></script>
+    <!-- marked turns what a model writes (Markdown) into the page's own elements; DOMPurify then cleans it. -->
+    <script src="../node_modules/marked/lib/marked.umd.js"></script>
     <script src="book.js"></script>
     <!-- Readability finds the article in a web page; article.js saves it for the library. -->
     <script src="../node_modules/@mozilla/readability/Readability.js"></script>

@@ -3735,7 +3735,92 @@ $('chat-edge').addEventListener('dblclick', () => {
   rewidth();
 });
 
-/** One thing said, for the thread: a question, with the passage it was asked of, or an answer. */
+// An answer is written in Markdown, which marked turns into the page's own elements and
+// DOMPurify then cleans (only what an answer has use for is let through: no pictures, no
+// styles, nothing that runs). Two things in it are the app's own:
+// - a link to "#section-5" goes to that section of what is open (the model is asked to point
+//   to places so: chats.js);
+// - a block of code marked svg is a drawing, and is shown as one, cleaned the same way.
+const WRITTEN = {
+  ALLOWED_TAGS: ['p', 'br', 'strong', 'b', 'em', 'i', 'del', 'code', 'pre', 'blockquote', 'ul', 'ol', 'li', 'a', 'table', 'thead', 'tbody', 'tr', 'th', 'td', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'sup', 'sub'],
+  ALLOWED_ATTR: ['href', 'lang', 'start', 'align'],
+  ALLOW_DATA_ATTR: false,
+  RETURN_DOM_FRAGMENT: true,
+};
+const DRAWN = {
+  USE_PROFILES: { svg: true },
+  FORBID_TAGS: ['style', 'image', 'foreignObject', 'a', 'use', 'animate', 'animateMotion', 'animateTransform', 'set'],
+  FORBID_ATTR: ['style', 'class', 'id', 'href', 'xlink:href'],
+  ALLOW_DATA_ATTR: false,
+  RETURN_DOM_FRAGMENT: true,
+};
+const PLACE = /^#section-(\d+)$/;
+// (A block of code keeps what it is marked as, so that a drawing can be told from the rest.)
+const letters = (text) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+marked.use({ gfm: true, renderer: { code: ({ text, lang }) => `<pre lang="${letters(String(lang ?? '').trim().split(/\s+/)[0].toLowerCase())}"><code>${letters(text)}</code></pre>\n` } });
+
+/** A drawing, from the SVG it was written as: nothing, if there is no drawing in it. */
+function drawing(svg) {
+  const made = DOMPurify.sanitize(svg, DRAWN).querySelector('svg');
+  if (!made) return null;
+  // It is as wide as the column and as tall as its shape asks: its own width and height give that shape, if it names no other.
+  const [wide, tall] = [parseFloat(made.getAttribute('width')), parseFloat(made.getAttribute('height'))];
+  if (!made.hasAttribute('viewBox') && wide > 0 && tall > 0) made.setAttribute('viewBox', `0 0 ${wide} ${tall}`);
+  if (!made.hasAttribute('viewBox')) return null;
+  made.removeAttribute('width');
+  made.removeAttribute('height');
+  made.setAttribute('role', 'img');
+  const figure = el('figure', 'chat-drawing');
+  figure.append(made);
+  return figure;
+}
+
+/** An answer's words, as they are shown. While it is `coming`, a drawing not yet whole is a
+    place kept for it; in an answer that has ended, one that never came whole is left out. */
+function written(text, coming) {
+  const made = DOMPurify.sanitize(marked.parse(text), WRITTEN);
+  for (const block of made.querySelectorAll('pre[lang="svg"]')) {
+    const whole = /<\/svg\s*>/i.test(block.textContent);
+    const shown = whole ? drawing(block.textContent) : null;
+    if (shown) block.replaceWith(shown);
+    else if (coming && !whole) {
+      const kept = el('figure', 'chat-drawing coming');
+      kept.append(tick(), el('span', '', 'Drawing'));
+      block.replaceWith(kept);
+    } else block.remove();
+  }
+  for (const link of made.querySelectorAll('a')) {
+    const to = link.getAttribute('href') ?? '';
+    if (PLACE.test(to)) link.className = 'chat-place';
+    else if (!/^https?:\/\//i.test(to)) link.replaceWith(...link.childNodes); // (anything else is no link at all)
+  }
+  return made;
+}
+
+const said = new WeakMap(); // for each answer on the thread, its words as they were written (to copy)
+
+/** What was looked at in the book for an answer, in a line: the first few things, and how many more. */
+function lookedLine(looked) {
+  const all = [...new Set(looked)];
+  return all.length > 3 ? `${all.slice(0, 3).join(' · ')} · and ${all.length - 3} more` : all.join(' · ');
+}
+
+/** A small round button under an answer: to copy it, or to have it answered again. */
+function act(name, label) {
+  const made = el('button', 'chat-act');
+  made.type = 'button';
+  made.dataset.act = name;
+  made.dataset.tip = label;
+  made.setAttribute('aria-label', label);
+  const icon = el('span', 'icon');
+  icon.setAttribute('aria-hidden', 'true');
+  made.append(icon);
+  return made;
+}
+
+/** One thing said, for the thread: a question, with the passage it was asked of, or an
+    answer: what was looked at for it, its words, and under them the ways to copy it or (the
+    latest one) to ask for it again. */
 function saying(message) {
   if (message.role === 'user') {
     const made = el('div', 'chat-asked');
@@ -3744,16 +3829,81 @@ function saying(message) {
     return made;
   }
   const made = el('div', 'chat-answer');
-  made.append(el('div', 'chat-words', message.text));
+  if (message.looked?.length) made.append(el('p', 'chat-looked', lookedLine(message.looked)));
+  const words = el('div', 'chat-words');
+  words.append(written(message.text, false));
+  made.append(words);
   if (message.state === 'stopped') made.append(el('p', 'chat-state', 'Stopped'));
+  const acts = el('div', 'chat-acts');
+  acts.append(act('copy', 'Copy'), act('again', 'Answer again'));
+  made.append(acts);
+  said.set(made, message.text);
   return made;
 }
 
+/** An answer that is on its way: where what is being looked at shows, and then its words. */
+function awaited() {
+  const node = el('div', 'chat-answer');
+  const looking = el('p', 'chat-looked');
+  looking.hidden = true;
+  const words = el('div', 'chat-words');
+  words.append(tick());
+  node.append(looking, words);
+  return { node, looking, words, text: '', looked: [], drawn: 0 };
+}
+
+/** What of an answer's words shows, so far as they have come: all of them, but of a drawing
+    still being written (a block marked svg that has not ended) nothing, only that it is one. */
+function showing(text) {
+  const at = text.search(/(^|\n)(```|~~~)svg[^\n]*\n(?![\s\S]*\n\2)/);
+  return at < 0 ? text : text.slice(0, at) + '\n\0';
+}
+
+/** Shows an answer's words as far as they have come: once for each frame of the screen,
+    however fast they come, and only when what shows of them has changed. While a drawing is
+    being written nothing that shows changes with each piece of it; drawn again each time,
+    the asterisk in its place would start its turn again each time, and never get round. */
+function drawComing(answer) {
+  if (answer.drawn) return;
+  answer.drawn = requestAnimationFrame(() => {
+    answer.drawn = 0;
+    if (talk?.answer !== answer || !answer.text) return;
+    const shows = showing(answer.text);
+    if (shows === answer.shows) return;
+    answer.shows = shows;
+    answer.words.replaceChildren(written(answer.text, true));
+    toEnd(true);
+  });
+}
+
+/** What can be asked with a click, in a chat with nothing in it yet (where the model in use
+    can look at the book itself: otherwise it could answer none of them). */
+function starters() {
+  const made = el('div', 'chat-starts');
+  for (const ask of ['Explain this page', 'Summarise this chapter', book?.lights?.length ? 'Go over my highlights' : 'What should I know before reading this?']) {
+    const one = el('button', 'chat-start', ask);
+    one.type = 'button';
+    made.append(one);
+  }
+  return made;
+}
+
+/** The thread of a chat with nothing in it: empty, or with what can be asked with a click. */
+function emptyThread() {
+  $('chat-thread').replaceChildren(...(talk?.sees && book ? [starters()] : []));
+}
+
 /** Brings the thread to its end: always, or (with `following`) only if it was there already,
-    so that an answer coming in does not pull the thread from under someone reading back. */
+    so that an answer coming in does not pull the thread from under someone reading back.
+    Whether it was there is kept as the thread is scrolled, not worked out when the answer
+    grows: a drawing arriving whole, say, makes it a good deal longer at once. */
+let atEnd = true;
+$('chat-thread').addEventListener('scroll', (e) => (atEnd = e.currentTarget.scrollHeight - e.currentTarget.scrollTop - e.currentTarget.clientHeight < 80));
 function toEnd(following) {
   const thread = $('chat-thread');
-  if (!following || thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80) thread.scrollTop = thread.scrollHeight;
+  if (following && !atEnd) return;
+  thread.scrollTop = thread.scrollHeight;
+  atEnd = true;
 }
 
 /** The field is as tall as what is written in it, up to a few lines. */
@@ -3786,7 +3936,13 @@ async function showChat(id) {
   if (!kept || talk !== mine || mine.asking) return;
   mine.chat = kept.chat.id;
   mine.title = kept.chat.title;
-  $('chat-thread').replaceChildren(...kept.messages.map(saying));
+  const nodes = [];
+  for (const message of kept.messages) {
+    nodes.push(saying(message));
+    // (Where the part of a long chat that the model has only in summary ends.)
+    if (message.id === kept.chat.summed && message !== kept.messages.at(-1)) nodes.push(el('p', 'chat-divide', 'Earlier messages summarised'));
+  }
+  $('chat-thread').replaceChildren(...nodes);
   drawChat();
   toEnd();
 }
@@ -3796,7 +3952,7 @@ function newChat() {
   if (!talk) return;
   if (talk.asking) window.api.chats.stop(talk.asking);
   Object.assign(talk, { chat: null, title: '', asking: null, answer: null });
-  $('chat-thread').replaceChildren();
+  emptyThread();
   drawChat();
   $('chat-field').focus();
 }
@@ -3823,8 +3979,12 @@ async function openChat() {
   reslide();
   fitField();
   $('chat-field').focus({ preventScroll: true });
-  const [last] = await window.api.chats.list(mine.item.file);
-  if (last && talk === mine && !mine.chat && !mine.asking) showChat(last.id); // (unless something was asked meanwhile)
+  const [[last], sees] = await Promise.all([window.api.chats.list(mine.item.file), window.api.chats.sees().catch(() => false)]);
+  if (talk !== mine) return;
+  mine.sees = sees;
+  if (mine.chat || mine.asking) return; // (something was asked meanwhile)
+  if (last) showChat(last.id);
+  else emptyThread();
 }
 
 /** Puts the chat away. An answer still on its way is stopped: what had come of it is kept. */
@@ -3848,28 +4008,259 @@ function askAbout(passage) {
 
 /** Asks what is written in the field (or, while an answer is coming, stops it). The question
     goes on the thread at once, and under it the answer as it comes. */
-function askChat() {
+function askChat(asked) {
   if (!talk) return;
   const field = $('chat-field');
   if (talk.asking) return window.api.chats.stop(talk.asking), field.focus();
-  const text = field.value.trim();
+  const text = (asked ?? field.value).trim();
   if (!text) return field.focus();
   const id = 'chat' + Date.now();
   const quote = talk.quote;
-  const node = el('div', 'chat-answer');
-  const words = el('div', 'chat-words');
-  words.append(tick());
-  node.append(words);
   talk.asking = id;
-  talk.answer = { node, words, text: '' };
-  $('chat-thread').append(saying({ role: 'user', text, quote }), node);
-  field.value = '';
+  talk.answer = awaited();
+  $('chat-thread').querySelector('.chat-starts')?.remove();
+  $('chat-thread').append(saying({ role: 'user', text, quote }), talk.answer.node);
+  if (asked === undefined) field.value = '';
   fitField();
   setQuote('');
   drawChat();
   toEnd();
   window.api.chats.ask(id, { chat: talk.chat ?? undefined, file: talk.item.file, text, quote, about: { title: talk.item.title, author: talk.item.author } });
 }
+
+/** Asks the chat's last question once more: its answer, and anything said of how that ended, give way to the new one. */
+function askAgain() {
+  if (!talk?.chat || talk.asking) return;
+  const thread = $('chat-thread');
+  while (thread.lastElementChild && !thread.lastElementChild.classList.contains('chat-asked')) thread.lastElementChild.remove();
+  if (!thread.lastElementChild) return;
+  const id = 'chat' + Date.now();
+  talk.asking = id;
+  talk.answer = awaited();
+  thread.append(talk.answer.node);
+  drawChat();
+  toEnd();
+  window.api.chats.ask(id, { chat: talk.chat, again: true, about: { title: talk.item.title, author: talk.item.author } });
+}
+
+/** A line for how an answer ended, when it did not end well; with it, the way to ask again. */
+function ended(words, wrong) {
+  const made = el('p', wrong ? 'chat-state wrong' : 'chat-state', words);
+  if (!talk.chat) return [made];
+  const acts = el('div', 'chat-acts shown');
+  acts.append(act('again', 'Try again'));
+  return [made, acts];
+}
+
+// What is pressed on the thread: a place in the book an answer points to, a link out, a way
+// to copy an answer or ask for it again, or something to ask with a click.
+$('chat-thread').addEventListener('click', (e) => {
+  const link = e.target.closest('a');
+  if (link) {
+    e.preventDefault();
+    const to = link.getAttribute('href') ?? '';
+    const place = PLACE.exec(to);
+    // (A place is gone to only in the item the chat is about, while it is the one open.)
+    if (place && book && talk && book.item === talk.item) go(Math.max(0, Math.min(book.parts.length - 1, Number(place[1]) - 1)));
+    else if (!place) window.api.library.out(to);
+    return;
+  }
+  const start = e.target.closest('.chat-start');
+  if (start) return askChat(start.textContent);
+  const pressed = e.target.closest('.chat-act');
+  if (!pressed) return;
+  if (pressed.dataset.act === 'again') return askAgain();
+  const words = said.get(pressed.closest('.chat-answer'));
+  if (words === undefined) return;
+  navigator.clipboard.writeText(words).then(() => {
+    pressed.classList.add('done'); // (the mark of its having been copied shows for a moment: style.css)
+    setTimeout(() => pressed.classList.remove('done'), 1400);
+  });
+});
+
+// What the model may look at. It is told only what is being read; the rest it asks for
+// itself when a question needs it (chats.js): the contents, the words of a section, a search
+// through the whole, where you are, and what you have highlighted and noted. The page answers,
+// since it has the book open. A section is counted from 1; in a PDF it is a page.
+const READ_MOST = 24000; // as many letters of a section as are given at once
+const FOUND_MOST = 20; // as many finds as are given
+const LISTED_MOST = 400; // as many of the contents' entries as are given
+const LIGHTS_MOST = 200; // as many highlights as are given
+const LIGHT_MOST = 600; // as many letters of one highlight
+const GONE = 'The book is no longer open.';
+const unitOf = (mine) => (mine.pdf ? 'page' : 'section');
+
+/** Which of a section's words are on the screen now: where they start and end in its words
+    (as find reads them). Nothing, if that cannot be told from the page. The words come in
+    order down the page (or, read in pages, from page to page), so the first that shows and
+    the first past the end of what shows are each found by halving. */
+function onScreen(section) {
+  const root = book.fetched.has(section) && rootOf(section);
+  if (!root) return null;
+  const words = linesOf(root);
+  const size = words.text.length;
+  if (!words.nodes.length || !size) return null;
+  const frame = $('reading').getBoundingClientRect();
+  const part = book.parts[section];
+  // Where a letter is drawn; or, if it is not drawn at all (a space between two paragraphs), the next that is.
+  const boxAt = (at) => {
+    for (let i = at; i < Math.min(size, at + 400); i++) {
+      const [box] = rangeOf(words.nodes, i, i + 1).getClientRects();
+      if (box && (box.width || box.height)) return box;
+    }
+    return null;
+  };
+  // Whether a letter comes before what shows (-1), is in it (0), or comes after (1).
+  const side = (at) => {
+    const box = boxAt(at);
+    if (!box) return 1; // (nothing from here on is drawn)
+    if (book.leaf) return Math.sign(Math.max(0, Math.floor((box.left - part.getBoundingClientRect().left + 1) / stride(part))) - book.leaf.page);
+    return box.bottom <= frame.top ? -1 : box.top >= frame.bottom ? 1 : 0;
+  };
+  const first = (test) => {
+    let low = 0;
+    let high = size;
+    while (low < high) {
+      const mid = (low + high) >> 1;
+      if (test(mid)) high = mid;
+      else low = mid + 1;
+    }
+    return low;
+  };
+  const start = first((at) => side(at) >= 0);
+  const end = first((at) => side(at) > 0);
+  return end > start ? [start, end] : null;
+}
+
+const lookers = {
+  contents(mine) {
+    const count = mine.parts.length;
+    const unit = unitOf(mine);
+    const head = `“${mine.item.title}” has ${count} ${unit}${count === 1 ? '' : 's'}.`;
+    if (!mine.toc.length) return `${head} It has no table of contents: read its ${unit}s by their numbers.`;
+    const lines = mine.toc.slice(0, LISTED_MOST).map((entry) => `${'  '.repeat(Math.max(0, entry.depth || 0))}- ${entry.title} (${unit} ${entry.section + 1})`);
+    if (mine.toc.length > LISTED_MOST) lines.push(`(and ${mine.toc.length - LISTED_MOST} more)`);
+    return `${head} Its contents, each with the ${unit} it begins in:\n${lines.join('\n')}`;
+  },
+  async read(mine, { section, from }) {
+    const count = mine.parts.length;
+    const unit = unitOf(mine);
+    const index = Math.round(Number(section)) - 1;
+    if (!(index >= 0 && index < count)) return `There is no ${unit} ${section}: it has ${count}, counted from 1.`;
+    const { text } = await wordsOf(mine, index);
+    if (!text.trim()) return `${unit[0].toUpperCase() + unit.slice(1)} ${index + 1} of ${count} has no words in it.`;
+    const start = Math.max(0, Math.min(text.length - 1, Math.round(Number(from) || 0)));
+    let end = Math.min(text.length, start + READ_MOST);
+    // (A part ends between words.)
+    if (end < text.length) end = Math.max(start + 1, text.lastIndexOf(' ', end));
+    const part = start || end < text.length ? `, letters ${start} to ${end} of ${text.length}` : '';
+    const more = end < text.length ? ` More follows: read it again with from ${end}.` : '';
+    return `${unit[0].toUpperCase() + unit.slice(1)} ${index + 1} of ${count}${part}.${more}\n\n${text.slice(start, end).trim()}`;
+  },
+  async search(mine, { query }) {
+    const asked = folded(String(query ?? '')).text.trim();
+    if (!asked) return 'There is nothing to look for.';
+    const unit = unitOf(mine);
+    const squeezed = (words) => words.replace(/\s+/g, ' ');
+    const found = [];
+    let more = false;
+    for (let section = 0; section < mine.parts.length && !more; section++) {
+      const words = await wordsOf(mine, section).catch(() => null);
+      if (book !== mine) return GONE;
+      let shown = -1; // how far into this section the words already given reach
+      for (const [start, end] of words ? hits(words.fold, asked) : []) {
+        if (start < shown) continue; // (it is among the words given with the find before it)
+        if (found.length === FOUND_MOST) {
+          more = true;
+          break;
+        }
+        const head = mine.pdf ? '' : headOf(mine, section, start, words.names);
+        shown = end + 240;
+        found.push(`- ${unit} ${section + 1}${head ? ` (${head})` : ''}: …${squeezed(words.text.slice(Math.max(0, start - 160), shown)).trim()}…`);
+      }
+    }
+    if (!found.length) return `“${query}” is not found anywhere in it.`;
+    return `“${query}” is found in ${more ? `more than ${FOUND_MOST} places. The first ${FOUND_MOST}` : found.length === 1 ? 'one place' : `${found.length} places`}:\n${found.join('\n')}`;
+  },
+  async place(mine) {
+    const count = mine.parts.length;
+    const unit = unitOf(mine);
+    const { section, part } = placeNow();
+    const { text, names } = await wordsOf(mine, section);
+    if (book !== mine) return GONE;
+    if (mine.pdf) return `The reader is on page ${section + 1} of ${count}.${text.trim() ? ` The words of that page:\n\n${text.slice(0, READ_MOST).trim()}` : ' It has no words in it.'}`;
+    // The words on the screen, as the page has them; if it cannot say, about a screen of them from where the reading line is.
+    const seen = onScreen(section) ?? [Math.floor(part * text.length), Math.min(text.length, Math.floor(part * text.length) + 3000)];
+    const start = Math.max(0, Math.min(text.length, seen[0]));
+    const end = Math.max(start, Math.min(text.length, seen[1], start + READ_MOST));
+    const head = headOf(mine, section, start, names);
+    const far = text.length ? Math.round((start / text.length) * 100) : 0;
+    const where = `The reader is in ${unit} ${section + 1} of ${count}${head ? ` (${head})` : ''}, ${far}% of the way through it.`;
+    return text.slice(start, end).trim() ? `${where} The words on their screen now, which are letters ${start} to ${end} of the ${unit}:\n\n${text.slice(start, end).trim()}` : `${where} There are no words on their screen.`;
+  },
+  async highlights(mine) {
+    const unit = unitOf(mine);
+    const all = [...mine.lights].sort((a, b) => a.section - b.section || a.start - b.start);
+    if (!all.length) return 'The reader has highlighted nothing in it, and written no notes.';
+    const lines = [];
+    for (const light of all.slice(0, LIGHTS_MOST)) {
+      const words = mine.pdf ? null : await wordsOf(mine, light.section).catch(() => null);
+      if (book !== mine) return GONE;
+      const head = words ? headOf(mine, light.section, light.start, words.names) : '';
+      const said = light.text.length > LIGHT_MOST ? light.text.slice(0, LIGHT_MOST) + '…' : light.text;
+      lines.push(`- ${unit} ${light.section + 1}${head ? ` (${head})` : ''}: “${said.replace(/\s+/g, ' ').trim()}”${light.note ? `\n  Their note beside it: ${light.note.replace(/\s+/g, ' ').trim()}` : ''}`);
+    }
+    if (all.length > LIGHTS_MOST) lines.push(`(and ${all.length - LIGHTS_MOST} more)`);
+    const noted = all.filter((light) => light.note).length;
+    return `The reader has highlighted ${all.length === 1 ? 'one passage' : `${all.length} passages`}${noted ? `, and written a note beside ${noted === 1 ? 'one' : noted} of them` : ''}. In the order they come:\n${lines.join('\n')}`;
+  },
+};
+
+/** What a look is called, for the reader: as it is done, and once it is done. Nothing, if it looks at nothing that is there. */
+async function lookName(mine, name, input) {
+  if (name === 'contents') return ['Looking at the contents', 'Looked at the contents'];
+  if (name === 'place') return ['Looking at your page', 'Looked at your page'];
+  if (name === 'highlights') return ['Looking at your highlights', 'Looked at your highlights'];
+  if (name === 'search') {
+    const asked = String(input.query ?? '').replace(/\s+/g, ' ').trim();
+    if (!asked) return null;
+    const short = asked.length > 40 ? asked.slice(0, 39).trimEnd() + '…' : asked;
+    return [`Searching for “${short}”`, `Searched for “${short}”`];
+  }
+  if (name !== 'read') return null;
+  const index = Math.round(Number(input.section)) - 1;
+  if (!(index >= 0 && index < mine.parts.length)) return null;
+  if (mine.pdf) return [`Reading page ${index + 1}`, `Read page ${index + 1}`];
+  const words = await wordsOf(mine, index).catch(() => null);
+  const head = words ? headOf(mine, index, Math.max(0, Math.round(Number(input.from) || 0)), words.names) : '';
+  const where = head || (mine.parts.length === 1 ? 'it' : `section ${index + 1}`);
+  return [`Reading ${where}`, `Read ${where}`];
+}
+
+window.api.chats.onLook(async (key, id, name, input) => {
+  const mine = book;
+  let found = GONE;
+  let label = '';
+  try {
+    // (Only the question now being answered may look, and only at what it was asked about.)
+    if (talk && id === talk.asking && mine && mine.item === talk.item) {
+      const answer = talk.answer;
+      const called = lookers[name] ? await lookName(mine, name, input ?? {}) : null;
+      if (called && talk?.answer === answer) {
+        // What is being looked at shows while it is: under it, once the answer comes, what was.
+        label = called[1];
+        answer.looking.replaceChildren(tick(), el('span', '', called[0]));
+        answer.looking.hidden = false;
+        toEnd(true);
+      }
+      found = (await lookers[name]?.(mine, input ?? {})) ?? 'There is no such tool.';
+      if (label && talk?.answer === answer && answer.looked.at(-1) !== label) answer.looked.push(label);
+    }
+  } catch (error) {
+    found = `That could not be looked up (${error.message}).`;
+  }
+  window.api.chats.looked(key, found, label);
+});
 
 // What comes of a question: first that it is kept (and, of a new chat, what it is called),
 // then the answer piece by piece, then how it ended.
@@ -3882,8 +4273,19 @@ window.api.chats.onPart((id, part) => {
     return drawChat();
   }
   if (part.delta) {
+    // Its words have begun: what was looked at for them is said plainly over them, and no longer as something going on.
+    if (!answer.text && answer.looked.length) answer.looking.replaceChildren(lookedLine(answer.looked));
+    else if (!answer.text) answer.looking.hidden = true;
     answer.text += part.delta;
-    answer.words.textContent = answer.text;
+    return drawComing(answer);
+  }
+  if (part.looking) {
+    // The model has gone to look at the book: what it had begun to say gives way to what it is looking at.
+    answer.text = '';
+    answer.shows = null;
+    answer.words.replaceChildren();
+    if (answer.looking.hidden || !answer.looking.querySelector('.tick')) answer.looking.replaceChildren(tick(), el('span', '', 'Looking at the book'));
+    answer.looking.hidden = false;
     return toEnd(true);
   }
   talk.asking = null;
@@ -3892,8 +4294,8 @@ window.api.chats.onPart((id, part) => {
   const kept = part.answer ? saying(part.answer) : null;
   if (kept) answer.node.replaceWith(kept);
   else answer.node.remove();
-  if (part.stopped && !kept) $('chat-thread').append(el('p', 'chat-state', 'Stopped'));
-  if (part.error) $('chat-thread').append(el('p', 'chat-state wrong', part.error));
+  if (part.stopped && !kept) $('chat-thread').append(...ended('Stopped', false));
+  if (part.error) $('chat-thread').append(...ended(part.error, true));
   drawChat();
   toEnd(true);
 });
@@ -3919,8 +4321,57 @@ document.querySelector('[data-chat="list"]').addEventListener('click', async (e)
   const mine = talk;
   const kept = await window.api.chats.list(mine.item.file);
   if (talk !== mine) return;
-  openMenu(kept.length ? kept.map((chat) => ({ name: chat.title, on: chat.id === mine.chat, run: () => (mine.asking && window.api.chats.stop(mine.asking), (mine.asking = null), showChat(chat.id)) })) : ['No chats yet'], button, true);
+  const chats = kept.length ? kept.map((chat) => ({ name: chat.title, on: chat.id === mine.chat, run: () => (mine.asking && window.api.chats.stop(mine.asking), (mine.asking = null), showChat(chat.id)) })) : ['No chats yet'];
+  // Under them, what can be done with the chat that is shown: call it something else, or take it away (asked twice, since it cannot be put back).
+  const shown = kept.find((chat) => chat.id === mine.chat);
+  const sure = () => openMenu(['Delete this chat?', { name: 'Delete', icon: 'bin', danger: true, run: () => dropChat(shown.id) }, { name: 'Keep it', run: () => {} }], button, true);
+  openMenu(shown ? [...chats, null, { name: 'Rename', icon: 'pen', run: renameChat }, { name: 'Delete', icon: 'bin', danger: true, run: () => setTimeout(sure) }] : chats, button, true);
 });
+
+/** The chat's name is written over, where it stands: Return (or leaving it) keeps the new name, Escape the old. */
+function renameChat() {
+  const mine = talk;
+  const name = $('chat-title');
+  if (!mine?.chat || name.isContentEditable) return;
+  name.contentEditable = 'plaintext-only';
+  name.focus();
+  getSelection().selectAllChildren(name);
+  const done = (keep) => {
+    name.removeEventListener('keydown', key);
+    name.removeEventListener('blur', left);
+    name.contentEditable = 'false';
+    getSelection().removeAllRanges();
+    const called = name.textContent.replace(/\s+/g, ' ').trim();
+    if (keep && called && called !== mine.title && talk === mine) {
+      mine.title = called;
+      window.api.chats.rename(mine.chat, called);
+    }
+    if (talk === mine) drawChat();
+  };
+  const key = (e) => {
+    if (e.key !== 'Enter' && e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation(); // (Escape here does not also put the chat away)
+    done(e.key === 'Enter');
+  };
+  const left = () => done(true);
+  name.addEventListener('keydown', key);
+  name.addEventListener('blur', left);
+}
+
+/** Takes a chat away for good: the one about this item that was last added to takes its place, or a new one. */
+async function dropChat(id) {
+  const mine = talk;
+  await window.api.chats.remove(id);
+  if (talk !== mine || mine.chat !== id) return;
+  if (mine.asking) window.api.chats.stop(mine.asking);
+  Object.assign(mine, { chat: null, title: '', asking: null, answer: null });
+  const [last] = await window.api.chats.list(mine.item.file);
+  if (talk !== mine || mine.chat) return;
+  if (last) return showChat(last.id);
+  emptyThread();
+  drawChat();
+}
 
 let helper = null; // how things stand with the intelligence: signed in with ChatGPT or not, which way, and as whom
 let proven = false; // whether ChatGPT's sign-in has been tried since it was made, by asking for its models

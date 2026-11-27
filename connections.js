@@ -1,11 +1,12 @@
 // The ways to a model, and which model answers. There are three:
 // - ChatGPT, signed in to in the browser (assistant.js).
 // - Claude, through Claude Code: a command-line tool already on this Mac, signed in to your
-//   own Claude subscription. Inquisitive holds no account or password for it; it runs the
-//   tool, hands it the words, and reads the reply.
+//   own Claude subscription. Inquisitive holds no account or password for it: Anthropic's
+//   Agent SDK runs the tool, hands it the words, and reads the reply.
 // - an endpoint: an address that answers as a model API, with your own API key if it wants
-//   one. A model running on this Mac (Ollama, LM Studio) is reached the same way.
-// (The second and third are Storm's, brought over.)
+//   one. A model running on this Mac (Ollama, LM Studio) is reached the same way. It is
+//   asked through pi (pi.js), as ChatGPT is.
+// (How the second and third are found, held and listed is Storm's, brought over.)
 //
 // What is held is kept in <userData>/connections.json:
 //   { claude: true, endpoints: [{ id, name, url, model, modelName, levels, limit, key }], off: [ids],
@@ -22,7 +23,9 @@ const Anthropic = require('@anthropic-ai/sdk');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const assistant = require('./assistant.js');
+const pi = require('./pi.js');
 
 const headless = Boolean(process.env.INQUISITIVE_HEADLESS);
 const HOME = os.homedir();
@@ -32,6 +35,7 @@ const BRIEF = 'You are a well-read companion to someone reading a book, an artic
 /** The one short message that proves a connection. */
 const CHECK = { system: 'This is a connection check from a reading app. Reply with one word and nothing else.', messages: [{ role: 'user', text: 'Reply with the single word: ready' }] };
 const LONG = 300e3; // how long an answer may take
+const TURNS = 12; // how many times a model may go between its tools and its answer, in one answer
 const LEVELS = ['low', 'medium', 'high']; // the reasoning levels on offer
 
 // ---------- what is kept ----------
@@ -155,20 +159,6 @@ function workDir() {
   return dir;
 }
 
-/** The last line of output that is a JSON object, or the last one that `fits`. */
-function lastJson(out, fits = () => true) {
-  for (const line of out.split('\n').reverse()) {
-    if (!line.trim().startsWith('{')) continue;
-    try {
-      const found = JSON.parse(line);
-      if (found && fits(found)) return found;
-    } catch {
-      // not it: keep looking
-    }
-  }
-  return null;
-}
-
 /** Why a tool gave no reply, in a line: its own last words, without colour codes. */
 function reason(output, done, tool) {
   if (done.timedOut) return `${tool} took too long to reply.`;
@@ -228,29 +218,78 @@ function asOne(messages) {
   return `This is a conversation with a reader. So far:\n\n${before.join('\n\n')}\n\nThe reader now asks:\n${messages.at(-1).text}`;
 }
 
-/** One prompt in, one reply out: no tools, none of your own Claude Code setup, nothing kept.
-    It prints its work as a line of JSON per event: the reply's words as they come (handed to
-    `onText`, whole so far each time), and a last line with the result. */
-async function askClaude({ system, messages, model, effort }, { onText, signal, timeout = LONG } = {}) {
+// (A test run off-screen never runs the real Agent SDK either: only a stand-in it is pointed at.)
+const SDK = headless ? process.env.INQUISITIVE_AI_SDK || '' : '@anthropic-ai/claude-agent-sdk';
+const sdk = () => (SDK ? import(headless ? pathToFileURL(SDK).href : SDK) : Promise.reject(new Error(`${CLAUDE.tool} cannot be run in a test without a stand-in.`)));
+
+/** Asks Claude, through Claude Code, and resolves with the reply. Anthropic's Agent SDK runs
+    Claude Code for it, with none of Claude Code's own tools and none of your own setup, and
+    keeping nothing. `tools` are tools of the app's own that the model may use as it answers:
+    each { name, description, input, run }, where `input` is what it takes (as zod describes
+    it) and `run` gives what it found, as text; they are run here, in this process. `onText`
+    is handed the words of what is being said now, whole so far; they begin again once a tool
+    has been used (`onUse` is told which), and the reply is what is said last. */
+async function askClaude({ system, messages, model, effort, tools = [] }, { onText, onUse, signal, timeout = LONG } = {}) {
   const file = await find(CLAUDE.bin);
   if (!file) throw new Error(`${CLAUDE.tool} was not found on this Mac.`);
-  const args = ['-p', '--output-format', 'stream-json', '--include-partial-messages', '--verbose', '--tools', '', '--safe-mode', '--no-session-persistence', '--system-prompt', system];
-  if (model) args.push('--model', model);
-  if (effort) args.push('--effort', effort);
+  const { query, tool, createSdkMcpServer } = await sdk();
+  const made = tools.map((one) =>
+    tool(one.name, one.description, one.input, async (input) => {
+      onUse?.(one.name);
+      return { content: [{ type: 'text', text: String(await one.run(input)) }] };
+    }),
+  );
+  const stop = new AbortController();
+  const off = () => stop.abort();
+  if (signal?.aborted) off();
+  else signal?.addEventListener('abort', off, { once: true });
+  let timedOut = false;
+  const timer = setTimeout(() => ((timedOut = true), off()), timeout);
+  // (The Agent SDK takes what is asked as a stream of messages when it is to run tools here.)
+  async function* asked() {
+    yield { type: 'user', message: { role: 'user', content: asOne(messages) }, parent_tool_use_id: null, session_id: '' };
+  }
   let said = '';
-  const onLine = (line) => {
-    if (!onText || !line.startsWith('{')) return;
-    try {
-      const delta = JSON.parse(line).event?.delta;
-      if (delta?.type === 'text_delta' && delta.text) onText((said += delta.text));
-    } catch {
-      // not an event: nothing to show
+  let result = null;
+  let errors = '';
+  try {
+    const events = query({
+      prompt: asked(),
+      options: {
+        pathToClaudeCodeExecutable: file,
+        systemPrompt: system,
+        ...(model ? { model } : {}),
+        ...(effort ? { effort } : {}),
+        tools: [], // none of Claude Code's own
+        ...(made.length ? { mcpServers: { book: createSdkMcpServer({ name: 'book', version: app.getVersion(), tools: made }) }, allowedTools: tools.map((one) => `mcp__book__${one.name}`) } : {}),
+        strictMcpConfig: true,
+        settingSources: [], // none of your own Claude Code setup
+        persistSession: false,
+        includePartialMessages: true,
+        maxTurns: TURNS,
+        cwd: workDir(),
+        abortController: stop,
+        env: { ...process.env, PATH: [path.dirname(file), ...BIN_DIRS, process.env.PATH].filter(Boolean).join(path.delimiter), CLAUDE_AGENT_SDK_CLIENT_APP: `inquisitive/${app.getVersion()}` },
+        stderr: (data) => (errors += data),
+      },
+    });
+    for await (const one of events) {
+      if (one.type === 'result') result = one;
+      if (one.type !== 'stream_event') continue;
+      if (one.event?.type === 'message_start') said = '';
+      const delta = one.event?.delta;
+      if (delta?.type === 'text_delta' && delta.text) onText?.((said += delta.text));
     }
-  };
-  const done = await run(file, args, { signal, timeout, input: asOne(messages), cwd: workDir(), onLine });
-  const result = lastJson(done.out, (line) => line.type === 'result') || lastJson(done.out);
-  if (typeof result?.result === 'string' && result.result.trim() && !result.is_error) return result.result.trim();
-  throw new Error(reason(result?.result || done.err || done.out, done, CLAUDE.tool));
+  } catch (error) {
+    if (signal?.aborted) throw error;
+    throw new Error(reason(errors || error.message, { timedOut }, CLAUDE.tool));
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener('abort', off);
+  }
+  if (result?.subtype === 'success' && !result.is_error && typeof result.result === 'string' && result.result.trim()) return result.result.trim();
+  if (result?.subtype === 'error_max_turns') throw new Error('Claude went on looking through it without settling on an answer.');
+  throw new Error(reason(String(result?.result || (result?.errors ?? []).join('\n') || errors), { timedOut }, CLAUDE.tool));
 }
 
 /** Looks on this Mac for Claude Code: whether it is installed, its version, and whether it
@@ -278,9 +317,10 @@ async function signIn({ signal } = {}) {
 }
 
 // ---------- endpoints ----------
-// An endpoint is `{ url, key, model }`. Anthropic's own address is spoken to through its SDK;
-// every other address is taken to speak the API OpenAI set, as Ollama, LM Studio and most
-// others do: GET /models and POST /chat/completions under the address.
+// An endpoint is `{ url, key, model }`. Anthropic's own address is spoken to in Anthropic's
+// way; every other address is taken to speak the API OpenAI set, as Ollama, LM Studio and
+// most others do: GET /models and POST /chat/completions under the address. Its models are
+// listed here (Anthropic's through its SDK); it is asked through pi (pi.js).
 
 /** The addresses offered ready-made when a model is added. */
 const PRESETS = [
@@ -416,46 +456,66 @@ function answerOf(text) {
   return start.startsWith('<think>') || '<think>'.startsWith(start) ? '' : answer;
 }
 
-/** Sends a conversation ({ system, messages: [{ role, text }] }) to an endpoint's model and
-    resolves with the reply's text. `effort` is the reasoning level, for a model known to take
-    one. The reply is asked for piece by piece: `onText` is handed its words as they come,
-    whole so far each time. */
-async function askEndpoint({ url, key, model, limit }, { system, messages }, { signal, timeout = LONG, effort, onText } = {}) {
-  let text = '';
-  if (speaksAnthropic(url)) {
-    if (!key) throw new Error('Anthropic needs an API key.');
-    try {
-      // (A model's reply may be as long as the model allows, up to a length no answer here needs to pass.)
-      const most = Math.min(limit || 8192, 32000);
-      const stream = anthropic(url, key, timeout).messages.stream({ model, max_tokens: most, ...(system && { system }), ...(effort && { output_config: { effort } }), messages: messages.map((one) => ({ role: one.role === 'assistant' ? 'assistant' : 'user', content: one.text })) }, { signal });
-      let said = '';
-      for await (const event of stream) {
-        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') onText?.((said += event.delta.text));
-      }
-      const message = await stream.finalMessage();
-      if (message.stop_reason === 'refusal') throw new Error('Claude declined to answer this.');
-      text = message.content.map((block) => (block.type === 'text' ? block.text : '')).join('');
-    } catch (e) {
-      if (signal?.aborted) throw e;
-      throw new Error(anthropicReason(e, model));
-    }
-  } else {
-    const sent = [...(system ? [{ role: 'system', content: system }] : []), ...messages.map((one) => ({ role: one.role === 'assistant' ? 'assistant' : 'user', content: one.text }))];
-    let said = '';
-    const onEvent = (event) => {
-      const piece = event.choices?.[0]?.delta?.content;
-      if (typeof piece !== 'string' || !piece) return;
-      said += piece;
-      const answer = answerOf(said).trimStart();
-      if (answer) onText?.(answer);
-    };
-    // A server that does not send piece by piece answers whole, as JSON, and is read that way.
-    const data = await call(url, '/chat/completions', key, { body: { model, messages: sent, stream: true }, signal, timeout, onEvent });
-    const content = data ? data.choices?.[0]?.message?.content : said;
-    text = answerOf(Array.isArray(content) ? content.map((part) => (typeof part?.text === 'string' ? part.text : '')).join('') : String(content ?? ''));
+/** Why an endpoint gave no reply, in a line: from what pi-ai or the address itself said. */
+function endpointReason(said, { host, model, anthropic }) {
+  const who = anthropic ? 'Anthropic' : host;
+  if (/\b(401|403)\b|authentication_error|permission_error|invalid[ _-]?(x-)?api[ _-]?key|incorrect api key/i.test(said)) return 'The API key was not accepted.';
+  if (anthropic && /\b404\b|not_found_error/i.test(said)) return `Anthropic has no model called ${model}.`;
+  if (/\b429\b|rate_limit/i.test(said)) return `${who} is turning requests away for now. Try again in a moment.`;
+  if (/timed? ?out/i.test(said)) return `${who} took too long to reply.`;
+  if (/connection error|fetch failed|ECONNREFUSED|ENOTFOUND/i.test(said)) return anthropic ? 'Anthropic could not be reached.' : `Nothing answered at ${host}.`;
+  // (The address's own words, where it sent any, out of what it sent them in.)
+  try {
+    const sent = JSON.parse(/\{[\s\S]*\}/.exec(said)?.[0] ?? '');
+    const own = typeof sent.error === 'string' ? sent.error : sent.error?.message || sent.message;
+    if (typeof own === 'string' && own.trim()) return own.trim().slice(0, 400);
+  } catch {
+    // not JSON: as it was said
   }
-  if (!text.trim()) throw new Error(`${model} gave no reply.`);
-  return text.trim();
+  if (/\b404\b/.test(said)) return `${host} does not answer as a model API at this address.`;
+  return said.replace(/^\d{3}:?\s*/, '').slice(0, 400) || `${who} gave no reply.`;
+}
+
+/** Sends a conversation ({ system, messages: [{ role, text }] }) to an endpoint's model and
+    resolves with the reply's text. It is asked through pi (pi.js), which speaks to Anthropic's
+    address in Anthropic's way and to every other in the way OpenAI set. `effort` is the
+    reasoning level, for a model known to take one. `tools` are what the model may use as it
+    answers ({ name, description, schema, run }); a model that turns them down (many that run
+    on this Mac take none) is asked once more without. `onText` is handed the reply's words as
+    they come, whole so far (they begin again once a tool has been used: `onUse` is told
+    which). The key goes to the address it was given for and nowhere else: pi-ai is told
+    where to go, so nothing set for other programs on this Mac can send it elsewhere. */
+async function askEndpoint({ url, key, model, limit }, { system, messages, tools = [] }, { signal, timeout = LONG, effort, onText, onUse } = {}) {
+  const anthropic = speaksAnthropic(url);
+  const { host } = new URL(url);
+  if (anthropic && !key) throw new Error('Anthropic needs an API key.');
+  // (A model's reply may be as long as the model allows, up to a length no answer here needs to pass.)
+  const asked = await pi.describe(anthropic ? 'anthropic-messages' : 'openai-completions', model, anthropic && url !== STAND_IN ? 'https://api.anthropic.com' : url, { most: anthropic ? Math.min(limit || 8192, 32000) : 0 });
+  const late = AbortSignal.timeout(timeout);
+  const off = AbortSignal.any([signal, late].filter(Boolean));
+  const once = (using) =>
+    new Promise((resolve) => {
+      let said = '';
+      // (An address that wants no key is sent none: pi-ai must be given something for one, so it is told to leave it out.)
+      pi.ask({ model: asked, key: async () => key || 'none', headers: key ? undefined : { Authorization: null }, instructions: system, messages, effort, tools: using, signal: off }, (part) => {
+        if (part.delta) {
+          said += part.delta;
+          const answer = answerOf(said).trimStart();
+          if (answer) onText?.(answer);
+        } else if (part.looking) {
+          said = '';
+          onUse?.(part.looking);
+        } else resolve(part);
+      });
+    });
+  let end = await once(tools);
+  if (end.error && tools.length && !end.text && /tool|function/i.test(end.error)) end = await once([]);
+  if (signal?.aborted) throw Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+  if (end.stopped || late.aborted) throw new Error(`${anthropic ? 'Anthropic' : host} took too long to reply.`);
+  if (end.error) throw new Error(/declined|refus/i.test(end.error) && anthropic ? 'Claude declined to answer this.' : endpointReason(end.error, { host, model, anthropic }));
+  const text = answerOf(end.text).trim();
+  if (!text) throw new Error(`${model} gave no reply.`);
+  return text;
 }
 
 /** Proves a connection the only way that counts: by getting a reply. Gives { ok, ms }, or
@@ -549,16 +609,22 @@ const asking = new Map(); // the asks under way here, and the checks and sign-in
     stopped, or { error, code, text } if it could not be had. `messages` is the whole
     conversation, oldest first, each { role, text }. `model` in what is told is the name of
     the model that answered. `system` is what the model is told of its part, if it is not
-    the usual, and `about` a line more to tell it (what is being read). */
-async function ask(id, { messages, thread, system = BRIEF, about }, tell) {
+    the usual, and `about` a line more to tell it (what is being read). `tools` is what the
+    model may use as it answers: { note, list }, a line that tells it of them and the tools
+    themselves, each { name, description, input, schema, run } (`input` as zod has what it
+    takes, which Claude's way asks for, and `schema` as JSON Schema, which pi's does). Each time one is used, { looking: its name } is told, and the words of the
+    answer begin again. */
+async function ask(id, { messages, thread, system = BRIEF, about, tools }, tell) {
   if (about) system = `${system} ${about}`;
   const s = kept();
   const all = await providers(s, false);
   const model = inUse(s, all);
   if (!model) return void tell({ error: 'No model is connected. Connect one in Settings.', code: 'no-model' });
   const effort = levelsFor(all, model).includes(s.effort) ? s.effort : undefined; // only where the model takes it
+  const using = tools?.list?.length ? tools : null;
+  if (using) system = `${system} ${using.note}`;
   if (model.provider === 'chatgpt') {
-    return assistant.ask(id, { model: model.id, instructions: system, messages, thread, effort }, (part) => tell(part.done ? { ...part, model: model.name } : part));
+    return assistant.ask(id, { model: model.id, instructions: system, messages, thread, effort, tools: using?.list ?? [] }, (part) => tell(part.done ? { ...part, model: model.name } : part));
   }
   const stop = new AbortController();
   asking.set(String(id), stop);
@@ -573,9 +639,11 @@ async function ask(id, { messages, thread, system = BRIEF, about }, tell) {
   try {
     const said = (messages ?? []).filter((one) => one && typeof one.text === 'string' && one.text);
     const endpoint = endpointOf(s, model.provider);
+    // (What it had begun to say before it used a tool gives way to what it says after.)
+    const onUse = (name) => ((text = ''), tell({ looking: name }));
     const answer = endpoint
-      ? await askEndpoint({ ...endpoint, key: await openKey(endpoint.key) }, { system, messages: said }, { signal: stop.signal, effort, onText })
-      : await askClaude({ system, messages: said, model: model.id, effort }, { signal: stop.signal, onText });
+      ? await askEndpoint({ ...endpoint, key: await openKey(endpoint.key) }, { system, messages: said, tools: using?.list ?? [] }, { signal: stop.signal, effort, onText, onUse })
+      : await askClaude({ system, messages: said, model: model.id, effort, tools: using?.list ?? [] }, { signal: stop.signal, onText, onUse });
     tell({ done: true, text: answer, model: model.name, usage: null });
   } catch (error) {
     if (stop.signal.aborted) tell({ stopped: true, text });
@@ -590,6 +658,9 @@ async function model() {
   const s = kept();
   return inUse(s, await providers(s, false));
 }
+
+/** Whether there is a model in use to give tools of the app's own to: every way to one takes them. */
+const sees = async () => Boolean(await model());
 
 /** Stops an ask that is under way, wherever it went. */
 function stop(id) {
@@ -708,4 +779,4 @@ function listen() {
   ipcMain.on('connections:page', () => !headless && shell.openExternal(CLAUDE.page));
 }
 
-module.exports = { listen, ask, stop, model };
+module.exports = { listen, ask, stop, model, once, sees };

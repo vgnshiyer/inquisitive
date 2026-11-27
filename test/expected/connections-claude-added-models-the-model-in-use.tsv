@@ -1,0 +1,78 @@
+1 rows	[["ChatGPT","Sign in to ask about what you read.",["Connect"]],["Claude","Claude subscription",["(Not signed in)","Connect"]],["Another model",null,["Add"]],["Default model",null,["No connection (off)"]],["Reasoning","",["Default (off)","Low (off)","Medium (off)","High (off)"]]]
+1 quick view	[["chatgpt",false,0],["claude",false,0]]
+1 asking with none	{"deltas":0,"error":"No model is connected. Connect one in Settings.","code":"no-model"}
+1 once with none	{"ok":false,"error":"No model is connected. Connect one in Settings."}
+2 not installed	{"title":"Connect Claude","steps":[["todo","Claude Code","Not found on this Mac.",["Get Claude Code"]],["todo","Account","Sign in with your Claude account.",[]],["todo","Connection","One short message, to check it answers.",[]]],"foot":["Cancel"]}
+3 sign-in fails	{"title":"Connect Claude","steps":[["done","Claude Code","Version 2.1.300",[]],["failed","Account","Login was cancelled in the browser.",["Try again"]],["todo","Connection","One short message, to check it answers.",[]]],"foot":["Cancel"]}
+3 signing in	{"title":"Connect Claude","steps":[["done","Claude Code","Version 2.1.300",[]],["busy","Account","Finish signing in on the page that opened in your browser.",[]],["todo","Connection","One short message, to check it answers.",[]]],"foot":["Cancel"]}
+3 given up	{"dialog":null,"row":["Claude","Claude subscription",["(Not signed in)","Connect"]],"kept":"no file","signedIn":false}
+~3 steps seen
+3 connected	{"title":"Connect Claude","steps":[["done","Claude Code","Version 2.1.300",[]],["done","Account","Signed in.",[]],["done","Connection","Claude replied in N s.",[]]],"foot":["Done"]}
+3 rows	[["ChatGPT","Sign in to ask about what you read.",["Connect"]],["Claude","Claude subscription",["[on]","…"]],["Another model",null,["Add"]],["Default model",null,["Claude Opus"]],["Reasoning","",["Default","Low","Medium","High"]]]
+3 reasoning	["",["Default*","Low","Medium","High"]]
+3 kept	{"claude":true,"endpoints":[],"off":[],"model":null,"effort":null,"mode":"600"}
+4 answered	{"deltas":7,"done":true,"answer":["From Claude Code: What is this about?","whole","Claude Opus"]}
+4 how it was run	{"args":["--system-prompt","You are a well-read companion to someone…","--model","opus"],"cwd":"<tmp>/inquisitive-ai","prompt":"> A dark night.\n\nWhat is this about?"}
+4 second	{"deltas":5,"done":true,"answer":["From Claude Code: And then?","whole","Claude Opus"]}
+4 second prompt	"This is a conversation with a reader. So far:\n\nThe reader asked:\n> A dark night.\n\nWhat is this about?\n\nYou answered:\nFrom Claude Code: What is this about?\n\nThe reader now asks:\nAnd then?"
+4 reasoning high	[["",["Default","Low","Medium","High*"]],"high"]
+4 asked with	["--model","opus","--effort","high"]
+4 once	{"ok":true,"text":"From Claude Code: Dune by Frank Herbert","model":"Claude Opus"}
+4 once ran as	["Sort these into collections.","Dune by Frank Herbert"]
+4 once kept nothing	2
+4 once empty	{"ok":false,"error":"There is nothing to ask."}
+4 once called off	"{\"ok\":false,\"cancelled\":true}"
+4 stopped	{"deltas":6,"stopped":true,"answer":["c0 c1 c2 c3 c4 c5 ","stopped",""]}
+5 form	{"chips":"[\"OpenAI\",\"Anthropic\",\"Ollama\",\"LM Studio\"]","d":{"title":"Add a model","steps":[["todo","Connection","One short message, to check it answers.",[]]],"foot":["Cancel","Connect (off)"]}}
+5 preset fills	"https://api.anthropic.com"
+5 wrong key	["failed","Connection","The API key was not accepted.",[]]
+5 models offered	["claude-opus-5-5","claude-haiku-5-5"]
+5 narrowed	["claude-haiku-5-5"]
+5 marked	["claude-haiku-5-5*"]
+5 picked	"claude-haiku-5-5"
+5 added	{"steps":[["done","claude-haiku-5-5 replied in N s."]],"foot":["Done"]}
+5 rows	[["ChatGPT","Sign in to ask about what you read.",["Connect"]],["Claude","Claude subscription",["[on]","…"]],["Anthropic","Claude Haiku 5.5, with your API key.",["[on]","…"]],["Another model",null,["Add"]],["Default model",null,["Claude Opus"]],["Reasoning","",["Default","Low","Medium","High"]]]
+5 kept	{"id":true,"name":"Anthropic","url":"<mock>/anthropic","model":"claude-haiku-5-5","modelName":"Claude Haiku 5.5","levels":[],"limit":64000,"key":"open:sk-ant-test"}
+5 view has no key	false
+6 menu	["[Claude]","Claude Fable","Claude Opus*","Claude Sonnet","Claude Haiku","[Anthropic]","Claude Haiku 5.5"]
+6 rows	["Default model",null,["Claude Haiku 5.5"]]
+6 reasoning (haiku takes none)	["Not available for this model.",["Default (off)","Low (off)","Medium (off)","High (off)"]]
+6 answered	{"deltas":3,"done":true,"answer":["From Anthropic: Now you","whole","Claude Haiku 5.5"]}
+6 what went out	{"model":"claude-haiku-5-5","effort":null,"max_tokens":32000,"system":[{"type":"text","text":"You are a well-read companion to someone reading a book, an article or a paper. Answer plainly and briefly. Write in Markdown, and lightly: a short list or a small table where it truly helps, and no headings. When a picture would explain something better than words (a family tree, a timeline, how an argument is built, who stands where), draw one: a single SVG in a fenced code block marked svg, with a line of words before it. Give it a viewBox about 600 wide and no width or height. It is shown on pale paper. Use only shapes, lines, paths and text, coloured by fill and stroke attributes: currentColor (a dark ink) for lines and words, and at most three soft, pale colours beside it. No styles, classes, scripts, images or links. Keep its words few, and at least 13 units high. Draw only when it earns its place. You can look at what they are reading with your tools: its contents, the words of any section of it, a search through the whole of it, where the reader is in it now, and what they have highlighted and noted in it. Look before you answer whenever the answer depends on what it says or on where they are, and do not guess at its words. When you point to a place in it, make that a link to its section, like [Chapter 3](#section-5) (in a PDF, [page 12](#section-12)), so that the reader can go there.","cache_control":{"type":"ephemeral"}}],"stream":true,"roles":"user assistant user assistant user assistant user","first":"> A dark night.\n\nWhat is this about?"}
+6 declined	{"deltas":3,"error":"Claude declined to answer this.","code":"failed","answer":["From Anthropic: REFUSE this","failed",""]}
+~6 stopped
+7 models offered	["llama3.2","qwen3"]
+7 no such model	["failed","Connection","model \"missing\" not found, try pulling it first",[]]
+7 rows	[["ChatGPT","Sign in to ask about what you read.",["Connect"]],["Claude","Claude subscription",["[on]","…"]],["Anthropic","Claude Haiku 5.5, with your API key.",["[on]","…"]],["127.0.0.1","llama3.2, on this Mac.",["[on]","…"]],["Another model",null,["Add"]],["Default model",null,["Claude Haiku 5.5"]],["Reasoning","Not available for this model.",["Default (off)","Low (off)","Medium (off)","High (off)"]]]
+7 answered	{"deltas":3,"done":true,"answer":["From this Mac: Local?","whole","llama3.2"]}
+7 what went out	{"auth":null,"roles":"system user"}
+8 its menu	["Edit","Disconnect"]
+8 edit form	"[[\"<mock>/anthropic\",\"https://example.com/v1\"],[\"\",\"Kept in the Keychain\"],[\"claude-haiku-5-5\",\"Its name\"]]"
+8 rows	[["Anthropic","Claude Opus 5.5, with your API key.",["[on]","…"]]]
+8 kept	[2,"claude-opus-5-5",["low","medium","high","max"],128000,"open:sk-ant-test"]
+8 reasoning (opus takes it)	["",["Default","Low","Medium","High*"]]
+8 asked with	{"effort":"low"}
+8b rested	{"row":["Anthropic","Claude Opus 5.5, with your API key.",["[off]","…"]],"model":["Claude Opus"],"off":1}
+8b menu	["[Claude]","Claude Fable","Claude Opus*","Claude Sonnet","Claude Haiku","[127.0.0.1]","llama3.2"]
+8b reasoning (none known)	["Not available for this model.",["Default (off)","Low (off)","Medium (off)","High (off)"]]
+8b on again	[["[on]","…"],[]]
+9a waiting	["ChatGPT","Finish signing in in your browser.",["Cancel"]]
+9a waiting, page redrawn	["ChatGPT","Finish signing in in your browser.",["Cancel"]]
+9a after Cancel	[["ChatGPT","Sign in to ask about what you read.",["Connect"]],false]
+9 signing in	{"offered":["Continue with ChatGPT","Sign in with Codex"],"waitingRow":["ChatGPT","Finish signing in in your browser.",["Cancel"]]}
+9 row	["ChatGPT","reader@example.com",["[on]","…"]]
+9 its menu	["Manage usage","Sign out"]
+9 menu	["[ChatGPT]","GPT-6.1 Sol","GPT-6.1 Terra","[Claude]","Claude Fable","Claude Opus","Claude Sonnet","Claude Haiku","[Anthropic]","Claude Opus 5.5","[127.0.0.1]","llama3.2*"]
+9 reasoning	["",["Default","Low","Medium","High*"]]
+9 answered	{"deltas":6,"done":true,"answer":["Hello, world. You said: And you?","whole","GPT-6.1 Sol"]}
+9 went out	["\"You are a well-read companion ",{"effort":"medium","summary":"auto"}]
+9 once	{"ok":true,"text":"Hello, world. You said: Titles","model":"GPT-6.1 Sol"}
+9 once went out	["\"Sort these.\"",1]
+9 once called off	"{\"ok\":false,\"cancelled\":true}"
+9 edges	"[[96,577,67,0],[649,1129,67,0],[96,577,67,0],[649,1129,67,0],[96,577,52,0],[96,577,52,0],[649,1129,52,0]]"
+10 chatgpt gone	{"provider":"claude","id":"opus","name":"Claude Opus"}
+10 claude menu	["Reconnect","Disconnect"]
+10 rows	[["ChatGPT","Sign in to ask about what you read.",["Connect"]],["Claude","Claude subscription",["(Ready)","Connect"]],["Anthropic","Claude Opus 5.5, with your API key.",["[on]","…"]],["Another model",null,["Add"]],["Default model",null,["Claude Opus 5.5"]],["Reasoning","",["Default","Low","Medium","High"]]]
+10 kept	{"claude":false,"endpoints":1,"model":{"provider":"chatgpt","id":"gpt-6.1-sol","name":"GPT-6.1 Sol"}}
+10 parts	"[\"Library\",\"Text\",\"Reading\",\"Intelligence\",\"Connections\",\"Model\"]"
+logs	"[]"

@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "imwx5rtwwqiev",
+      "kind": "article",
+      "file": "Articles/A Slow Essay",
+      "title": "A Slow Essay",
+      "author": "Ada Example",
+      "site": "127.0.0.1",
+      "address": "http://127.0.0.1:58244/slow",
+      "minutes": 2,
+      "sections": 1,
+      "added": 1795673725232,
+      "progress": 0,
+      "opened": 1795728558227
+    },
+    {
+      "id": "imwx5rvhkfc8n",
+      "kind": "book",
+      "file": "Books/The Test Book.epub",
+      "title": "The Test Book",
+      "author": "Ada Tester, Sam Second",
+      "added": 1795673727272,
+      "progress": 0,
+      "sections": 14,
+      "opened": 1795728557082
+    },
+    {
+      "id": "imwx5rvhmhakk",
+      "kind": "pdf",
+      "file": "PDFs/The Test Paper.pdf",
+      "title": "The Test Paper",
+      "author": "Paula Paper",
+      "added": 1795673727274,
+      "progress": 0,
+      "sections": 12,
+      "pages": 12,
+      "opened": 1795728554203
+    }
+  ],
+  "collections": []
+}

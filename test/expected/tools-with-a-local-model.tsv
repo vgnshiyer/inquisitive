@@ -1,0 +1,45 @@
+0 added	{"ok":true,"ms":N}
+0 in use	[{"provider":"api-ID","id":"qwen3","name":"qwen3"},true]
+0 kinds	"[[\"article\",\"A Slow Essay\"],[\"book\",\"The Test Book\"],[\"pdf\",\"The Test Paper\"]]"
+~1 as it came
+1 answer	"Looked at the contents“The Test Book” has 14 sections. Its contents, each with the section it begins in:\n\nChapter 1 (section 2)\nChapter 2 (section 3)\nA section inside chapter two (section 3)\n\n\nChapter 3 (section 4)\nChapter 4 (section 5)\nChapter 5 (section 6)\nChapter 6 (section 7)\nChapter 7 (section 8)\nChapter 8 (section 9)\nChapter 9 (section 10)\nChapter 10 (section 11)\nChapter 11 (section 12)\nChapter 12 (section 13)\nNotes (section 14)\n\n"
+1 what went out	[{"auth":null,"tools":[],"roles":["system","user"]},{"auth":null,"tools":["contents","read","search","place","highlights"],"roles":["system","user"]},{"auth":null,"tools":["contents","read","search","place","highlights"],"roles":["system","user","assistant","tool"]}]
+2 read 2	"Read Chapter 1Section 2 of 14.\nChapter 1: Middles \n A centred line. Small Capitals Here Hidden by the book. Set to the right, inline. Drop cap paragraph. Centred the old way. \n Chapter 1, paragraph 1. The quick brown fox jumps over the lazy dog, and the dog, being lazy, lets it. The quick brown fox jumps over the lazy dog, and the dog, being lazy, lets it. The quick brown fox jumps over the lazy dog, and the dog, bei …(710)"
+2 read 99	"There is no section 99: it has 14, counted from 1.\n"
+2 read 2 from 40	"Read Chapter 1Section 2 of 14, letters 40 to 10177 of 10177.\nll Capitals Here Hidden by the book. Set to the right, inline. Drop cap paragraph. Centred the old way. \n Chapter 1, paragraph 1. The quick …(710)"
+2 read "two"	"Validation failed for tool \"read\":\n\nsection: expected integer, got string\n\nReceived arguments:\n{\n  \"section\": \"two\"\n}\n"
+3 search	"Searched for “the”“the” is found in more than 20 places. The first 20:\n\nsection 2 (Chapter 1): …Chapter 1: Middles A centred line. Small Capitals Here Hidden by the book. Set to the right, inline. Drop cap paragraph. Centred the old way. Chapter 1, paragraph 1. The quick brown fox jumps over the lazy dog, and the dog, being lazy, lets it. The quick brown fox jumps over the lazy dog, and the dog, bei…\nsection 2 (Chapter 1): …. The quick brown fox jumps over the lazy dog, and the dog, being lazy, lets it. The quick brown fox jumps over the lazy dog, and the dog, being lazy, lets it. The quick brown fox jumps over the lazy dog, and the dog, being lazy, lets it. The quick brown fox jumps over th …(717)"
+3 search capitals	"Searched for “THE TEST”“THE TEST” is not found anywhere in it.\n"
+3 not found	"Searched for “zzzzqq”“zzzzqq” is not found anywhere in it.\n"
+~4 as it came
+4 answer	"Looked at the contents · Read section 1 · Searched for “chapter”“The Test Book” has 14 sections. Its contents, each with the section it begins in:\n\nChapter 1 (section 2)\nChapter 2 (section 3)\nA sectio …(1219)"
+4 the next ask carries the chat	"see 1"
+4 kept	["assistant:whole:1184:qwen3","user:whole:42:"]
+5 no tool	"From this Mac: Just say hello\n"
+5 too many turns	["Looked at the contents“The Test Book” has 14 sections. Its contents, each with the section it begins in:\n\nChapter 1 (section 2)\nChapter 2 (section 3)\nA section inside chapter two (section 3)\n\n\nChapter 3 (section 4)\nChapter 4 (section 5)\nChapter 5 (section 6)\nChapter 6 (section 7)\nChapter 7 (section 8)\nChapter 8 (section 9)\nChapter 9 (section 10)\nChapter 10 (section 11)\nChapter 11 (section 12)\nChapter 12 (section 13)\nNotes (section 14)\n\n",[]]
+5 failed	["From this Mac: FAIL now\n",[]]
+~5 while looking
+5 stopped	"[[\"chat-asked\",\"SLOW CONTENTS READ 1\"],[\"chat-answer\",\"Looked at the contents · Read section 1“The Test Book” has 1\"]]"
+5b pages	true
+5b pages chapter start	"Looked at your pageThe reader is in section 3 of 14 (Chapter 2), 0% of the way through it. The words on their screen now, which are letters 0 to 1019 of the section:\nChapter 2: Ends \n Chapter 2, paragraph 1. The quick brown fox ju …(714)"
+5b pages chapter start: drawn	"{\"section\":3,\"of\":10193,\"frame\":[0,0,826,780],\"first\":[224,59,122],\"justBefore\":null,\"last\":[351,645,670],\"justAfter\":[789,64,89],\"begins\":\"Chapter 2: Ends \\n\\n Chapter 2, paragraph \",\"ends\":\"dog, and the dog, being lazy, lets it.  \"}"
+5b pages further on	"Looked at your pageThe reader is in section 3 of 14 (Chapter 2), 22% of the way through it. The words on their screen now, which are letters 2288 to 3298 of the section:\nquick brown fox jumps over the lazy dog, and the dog, being  …(715)"
+5b pages further on: drawn	"{\"section\":3,\"of\":10193,\"frame\":[0,0,826,780],\"first\":[143,64,89],\"justBefore\":[25,677,702],\"last\":[644,681,706],\"justAfter\":[763,64,89],\"begins\":\"quick brown fox jumps over the lazy dog,\",\"ends\":\"azy, lets it. The quick brown fox jumps \"}"
+5b scroll	false
+5b scroll chapter start	"Looked at your pageThe reader is in section 3 of 14 (Chapter 2), 0% of the way through it. The words on their screen now, which are letters 0 to 1219 of the section:\nChapter 2: Ends \n Chapter 2, paragraph 1. The quick brown fox ju …(714)"
+5b scroll chapter start: drawn	"{\"section\":3,\"of\":10193,\"frame\":[0,0,826,780],\"first\":[219,91,154],\"justBefore\":null,\"last\":[662,774,799],\"justAfter\":[138,806,831],\"begins\":\"Chapter 2: Ends \\n\\n Chapter 2, paragraph \",\"ends\":\"g, being lazy, lets it. The quick brown \"}"
+5b scroll further on	"Looked at your pageThe reader is in section 3 of 14 (Chapter 2), 21% of the way through it. The words on their screen now, which are letters 2152 to 3500 of the section:\nover the lazy dog, and the dog, being lazy, lets it. The qui …(715)"
+5b scroll further on: drawn	"{\"section\":3,\"of\":10193,\"frame\":[0,0,826,780],\"first\":[138,-9,16],\"justBefore\":[675,-42,-17],\"last\":[659,769,794],\"justAfter\":[138,801,826],\"begins\":\"over the lazy dog, and the dog, being la\",\"ends\":\" the lazy dog, and the dog, being lazy, \"}"
+5b no highlights	"Looked at your highlightsThe reader has highlighted nothing in it, and written no notes.\n"
+5b highlights	"Looked at your highlightsThe reader has highlighted 2 passages, and written a note beside one of them. In the order they come:\n\nsection 3 (Chapter 2): “quick brown fox jumps over the”\nTheir note beside it: Why a fox?\nsection 3 (Chapter 2): “lazy dog”\n\n"
+6 pdf contents	"Looked at the contents“The Test Paper” has 12 pages. Its contents, each with the page it begins in:\n\nIntroduction (page 1)\nMethod (page 3)\nA detail of the method (page 5)\n\n\nResults (page 9)\n\n"
+6 pdf read 1	"Read page 1Page 1 of 12.\nPage 1 of The Test Paper\nLine 1 of page 1. The quick brown fox jumps over the lazy dog.\nLine 2 of page 1. The quick brown fox jumps over the lazy dog.\nLine 3 of page 1. The quick brown fox jumps over the lazy dog.\nLine 4 of page 1. The quick brown fox jumps over the lazy dog …(710)"
+6 pdf search	"Searched for “test”“test” is found in 12 places:\n\npage 1: …Page 1 of The Test Paper Line 1 of page 1. The quick brown fox jumps over the lazy dog. Line 2 of page 1. The quick brown fox jumps over the lazy dog. Line 3 of page 1. The quick brown fox jumps over the lazy dog. Line 4 of page 1. The quick brown fox jumps…\npage 2: …Page 2 of The Test Paper Line 1 of page 2. The quick brown fox jumps over …(716)"
+6 pdf place	"Looked at your pageThe reader is on page 5 of 12. The words of that page:\nPage 5 of The Test Paper\nLine 1 of page 5. The quick brown fox jumps over the lazy dog.\nLine 2 of page 5. The quick brown fox  …(719)"
+6 pdf highlights	"Looked at your highlightsThe reader has highlighted nothing in it, and written no notes.\n"
+7 article contents	"Looked at the contents“A Slow Essay” has 1 section. It has no table of contents: read its sections by their numbers.\n"
+7 article read	"Read itSection 1 of 1.\nA Slow Essay \n Ada Example · 127.0.0.1 \n Paragraph 1. A page asks for very little: a column narrow enough that the eye finds the next line, and lines far enough apart that each can be read on its own. Paragraph 2. A p …(704)"
+7 article search	"Searched for “slow”“slow” is found in one place:\n\nsection 1: …A Slow Essay Ada Example · 127.0.0.1 Paragraph 1. A page asks for very little: a column narrow enough that the eye finds the next line, and lines far enough apart that each can be read on its own. Paragraph 2. A page asks for very little: …(305)"
+7 article place	"Looked at your pageThe reader is in section 1 of 1, 0% of the way through it. The words on their screen now, which are letters 0 to 823 of the section:\nA Slow Essay \n Ada Example · 127.0.0.1 \n Paragraph 1. A page asks for very little: a column narrow enough th …(717)"
+8 put away	["reading",true]
+logs	"[]"

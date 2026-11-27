@@ -25,6 +25,7 @@
 // that is to last has to be kept here, by the app; `ask` is given all of it each time.
 
 const { app, BrowserWindow, ipcMain, safeStorage, shell } = require('electron');
+const pi = require('./pi.js');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const http = require('node:http');
@@ -490,81 +491,55 @@ async function models() {
 const asking = new Map(); // the asks under way, by their id: each can be stopped
 
 /** Asks a model, and tells of the answer as it comes: { delta } for each piece of text,
-    then { done, text } once it is whole, or { error, code } if it could not be had.
-    `messages` is the whole conversation so far, oldest first, each { role: 'user' or
-    'assistant', text }: nothing of it is kept on OpenAI's side between asks. `thread` names
-    the conversation, so that asks in it are served from the same place and cost less.
-    `effort` is the reasoning level, for a model known to take one. */
-async function ask(id, { model, instructions, messages, thread, effort }, tell) {
+    then { done, text } once it is whole, { stopped, text } if it was stopped, or { error,
+    code, text } if it could not be had. `messages` is the whole conversation so far, oldest
+    first, each { role: 'user' or 'assistant', text }: nothing of it is kept on OpenAI's side
+    between asks. `thread` names the conversation, so that asks in it are served from the same
+    place and cost less. `effort` is the reasoning level, for a model known to take one.
+    `tools` are what the model may use as it answers: each { name, description, schema, run }.
+    Each time one is used, { looking: its name } is told, and the answer's words begin again.
+
+    The asking itself is pi's (pi.js): ChatGPT's two addresses are two of the kinds pi-ai
+    speaks to, and its loop runs the tools. What is here is which address, the sign-in to ask
+    with, and what a refusal means. */
+async function ask(id, { model, instructions, messages, thread, effort, tools }, tell) {
   const stop = new AbortController();
   asking.set(id, stop);
-  let text = '';
   try {
     const chosen = model || (await models())[0]?.id;
     if (!chosen) return void tell({ error: 'Your ChatGPT plan has no model to ask.', code: 'no-model' });
-    const said = (messages ?? []).filter((one) => one && typeof one.text === 'string' && one.text);
-    const has = kept();
-    const codex = has.way === 'codex';
-    // (Codex's address wants each message spelt out in full, and always something by way of instructions.)
-    const input = codex
-      ? said.map((one) => (one.role === 'assistant' ? { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: one.text }] } : { type: 'message', role: 'user', content: [{ type: 'input_text', text: one.text }] }))
-      : said.map((one) => ({ role: one.role === 'assistant' ? 'assistant' : 'user', content: one.text }));
-    const answer = await fetch((codex ? CODEX.base : RESOURCE) + '/responses', {
-      method: 'POST',
-      signal: stop.signal,
-      headers: {
-        Authorization: 'Bearer ' + (await access()),
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-        ...(codex ? { originator: WHO, ...(has.account ? { 'chatgpt-account-id': has.account } : {}) } : {}),
-        ...(thread ? { 'session-id': String(thread), ...(codex ? {} : { 'thread-id': String(thread), 'x-client-request-id': String(thread) }) } : {}),
+    const codex = kept().way === 'codex';
+    await access(); // (signed out, it is said so here, plainly, before anything is asked)
+    await pi.ask(
+      {
+        // (Of a model pi-ai has not heard of, it is told what it knows of the latest: ChatGPT's own list is the newer.)
+        model: await pi.describe(codex ? 'openai-codex-responses' : 'openai-responses', chosen, codex ? CODEX.base : RESOURCE, { like: true }),
+        key: access,
+        headers: codex ? { originator: WHO } : thread ? { 'thread-id': String(thread) } : undefined,
+        instructions: String(instructions || BRIEF),
+        messages,
+        thread,
+        effort,
+        tools,
+        signal: stop.signal,
+        // Codex's address is spoken to plainly (not over a socket kept open), and asked for answers of an ordinary length (it is told to be terse otherwise).
+        more: codex ? { transport: 'sse' } : {},
+        shape: codex ? (body) => (body.text = { ...body.text, verbosity: 'medium' }) : undefined,
       },
-      // (What both ways of signing in ask for: nothing stored, and the answer streamed.)
-      body: JSON.stringify({ model: chosen, ...(instructions || codex ? { instructions: String(instructions || BRIEF) } : {}), input, ...(effort ? { reasoning: { effort: String(effort) } } : {}), store: false, stream: true }),
-    });
-    if (!answer.ok || !answer.body) return void tell(await failure(answer));
-    // The answer comes as a stream of events, each a line naming it and a line of JSON.
-    const reader = answer.body.getReader();
-    const decoder = new TextDecoder();
-    let held = '';
-    let ended = false;
-    const take = (block) => {
-      const data = block.split('\n').filter((line) => line.startsWith('data:')).map((line) => line.slice(5).trimStart()).join('\n');
-      if (!data || data === '[DONE]') return;
-      let event;
-      try {
-        event = JSON.parse(data);
-      } catch {
-        return;
-      }
-      if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
-        text += event.delta;
-        tell({ delta: event.delta });
-      } else if (event.type === 'response.completed') {
-        ended = true;
-        tell({ done: true, text, model: chosen, usage: event.response?.usage ?? null });
-      } else if (event.type === 'response.failed' || event.type === 'response.incomplete' || event.type === 'error') {
-        ended = true;
-        const error = event.response?.error ?? event.error ?? event;
-        tell({ ...trouble(error?.code ?? '', error?.message ?? (event.type === 'response.incomplete' ? 'The answer was cut short.' : ''), 'an error'), text });
-      }
-    };
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      held += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
-      for (let end = held.indexOf('\n\n'); end >= 0; end = held.indexOf('\n\n')) {
-        take(held.slice(0, end));
-        held = held.slice(end + 2);
-      }
-    }
-    if (held.trim()) take(held);
-    // (An answer is whole only once it has said so.)
-    if (!ended) tell({ error: 'The answer stopped before it was finished.', code: 'cut-short', text });
+      (part) => {
+        if (part.done) return tell({ done: true, text: part.text, model: chosen, usage: null });
+        if (!part.error) return tell(part);
+        if (part.threw instanceof SignedOut) return tell({ error: part.threw.message, code: 'signed-out' });
+        // (What went wrong comes in words: the reason ChatGPT gave is looked for among them.)
+        if (/stream ended|terminal response/i.test(part.error)) return tell({ error: 'The answer stopped before it was finished.', code: 'cut-short', text: part.text });
+        const code = /\b(subscription_sharing_[a-z_]+|usage_limit_reached|usage_not_included)\b/.exec(part.error)?.[1] ?? (/usage limit/i.test(part.error) ? 'usage_limit_reached' : '');
+        tell({ ...trouble(code, part.error, 'an error'), text: part.text });
+      },
+    );
   } catch (error) {
-    if (stop.signal.aborted) tell({ stopped: true, text });
+    if (stop.signal.aborted) tell({ stopped: true, text: '' });
     else if (error instanceof SignedOut) tell({ error: error.message, code: 'signed-out' });
-    else tell({ error: `ChatGPT could not be reached (${error.message}).`, code: 'unreachable', text });
+    else tell({ error: `ChatGPT could not be reached (${error.message}).`, code: 'unreachable', text: '' });
   } finally {
     asking.delete(id);
   }
