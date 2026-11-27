@@ -153,21 +153,31 @@ function forget(file) {
 
 const answering = new Set(); // the chats with a question out: one at a time in each
 
+/** What the model is told of what is being read: its title, and who wrote it. */
+function reading(about) {
+  const title = String(about?.title ?? '').trim();
+  const author = String(about?.author ?? '').trim();
+  return title ? `The reader is reading “${title}”${author ? ` by ${author}` : ''}.` : '';
+}
+
 // A question as it is sent: the passage it was asked of first, set apart, then the question.
 const sent = (message) => (message.quote ? message.quote.split('\n').map((line) => '> ' + line).join('\n') + '\n\n' + message.text : message.text);
 
 /** Asks a question in a chat, and keeps both it and what comes back. `chat` names the chat;
     without it a new one is begun, about `file` (an item's file within the library) if that
-    is given, and called by the question. `quote` is the passage the question is asked of.
+    is given, and called by the question. `quote` is the passage the question is asked of,
+    and `about` what is being read ({ title, author }), which the model is told.
 
     It tells of what happens as it does: first { chat, question }, once the question is kept;
     then { delta } for each piece of the answer; then one of { done, answer }, { stopped,
     answer } or { error, code, answer }. `answer` is the answer as kept. What had come of one
     that was stopped or failed is kept too, marked so; if nothing had, there is no answer
     (null), and the question stays. */
-async function ask(id, { chat: into, file, text, quote }, tell) {
+async function ask(id, { chat: into, file, text, quote, about }, tell) {
   const asked = String(text ?? '').trim();
   if (!asked) return void tell({ error: 'There is nothing to ask.', code: 'empty' });
+  // (With no model to ask, nothing is kept: the question would only sit there unanswered.)
+  if (!(await connections.model().catch(() => null))) return void tell({ error: 'No model is connected. Connect one in Settings.', code: 'no-model' });
   let chat = null;
   let question = null;
   try {
@@ -199,7 +209,7 @@ async function ask(id, { chat: into, file, text, quote }, tell) {
   let end = null;
   try {
     const messages = messagesOf(chat.id).map((one) => ({ role: one.role, text: sent(one) }));
-    await connections.ask(id, { messages, thread: chat.id }, (part) => (part.delta ? tell(part) : (end = part)));
+    await connections.ask(id, { messages, thread: chat.id, about: reading(about) }, (part) => (part.delta ? tell(part) : (end = part)));
   } catch (error) {
     end = { error: `The question could not be asked (${error.message}).`, code: 'not-asked' };
   } finally {

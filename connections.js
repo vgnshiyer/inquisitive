@@ -28,7 +28,7 @@ const headless = Boolean(process.env.INQUISITIVE_HEADLESS);
 const HOME = os.homedir();
 
 /** What every model is told of its part, whichever way it is reached. */
-const BRIEF = 'You are a well-read companion to someone reading a book, an article or a paper. Answer plainly and briefly.';
+const BRIEF = 'You are a well-read companion to someone reading a book, an article or a paper. Answer plainly and briefly, in ordinary prose: no Markdown, no headings, no lists unless one is asked for.';
 /** The one short message that proves a connection. */
 const CHECK = { system: 'This is a connection check from a reading app. Reply with one word and nothing else.', messages: [{ role: 'user', text: 'Reply with the single word: ready' }] };
 const LONG = 300e3; // how long an answer may take
@@ -549,8 +549,9 @@ const asking = new Map(); // the asks under way here, and the checks and sign-in
     stopped, or { error, code, text } if it could not be had. `messages` is the whole
     conversation, oldest first, each { role, text }. `model` in what is told is the name of
     the model that answered. `system` is what the model is told of its part, if it is not
-    the usual. */
-async function ask(id, { messages, thread, system = BRIEF }, tell) {
+    the usual, and `about` a line more to tell it (what is being read). */
+async function ask(id, { messages, thread, system = BRIEF, about }, tell) {
+  if (about) system = `${system} ${about}`;
   const s = kept();
   const all = await providers(s, false);
   const model = inUse(s, all);
@@ -582,6 +583,12 @@ async function ask(id, { messages, thread, system = BRIEF }, tell) {
   } finally {
     asking.delete(String(id));
   }
+}
+
+/** The model in use just now: { provider, id, name }, or null when none is connected. */
+async function model() {
+  const s = kept();
+  return inUse(s, await providers(s, false));
 }
 
 /** Stops an ask that is under way, wherever it went. */
@@ -701,4 +708,4 @@ function listen() {
   ipcMain.on('connections:page', () => !headless && shell.openExternal(CLAUDE.page));
 }
 
-module.exports = { listen, ask, stop };
+module.exports = { listen, ask, stop, model };

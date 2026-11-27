@@ -32,6 +32,7 @@
         <button class="tool" type="button" data-tool="lights" aria-label="Highlights" data-tip="Highlights"><span class="icon" aria-hidden="true"></span></button>
         <button class="tool" type="button" data-tool="contents" aria-label="Contents" data-tip="Contents"><span class="icon" aria-hidden="true"></span></button>
         <button class="tool" type="button" data-tool="text" aria-label="Text settings" data-tip="Text settings"><span class="icon" aria-hidden="true"></span></button>
+        <button class="tool" type="button" data-tool="ask" aria-label="Chat" data-tip="Chat" aria-controls="chat"><span class="icon asterisk" aria-hidden="true">*</span></button>
       </div>
     </header>
 
@@ -72,6 +73,31 @@
       <span id="folio"></span>
       <span id="place"></span>
     </main>
+
+    <!-- The chat, beside the page while it is open: what has been asked about this book and
+         answered, and under it the place to ask. A passage chosen on the page is shown over
+         the field, to be asked about. It slides in from the right, and is as wide as it was
+         last dragged to be. -->
+    <aside id="chat" aria-label="Chat" inert>
+      <!-- Its left edge, which is dragged to make it wider or narrower. -->
+      <div id="chat-edge" role="separator" aria-orientation="vertical" aria-label="Width of the chat"></div>
+      <div id="chat-inner">
+      <header id="chat-head">
+        <h2 id="chat-title"></h2>
+        <button class="tool" type="button" data-chat="list" aria-label="Chats about this" data-tip="Chats about this"><span class="icon" aria-hidden="true"></span></button>
+        <button class="tool" type="button" data-chat="new" aria-label="New chat" data-tip="New chat"><span class="icon" aria-hidden="true"></span></button>
+        <button class="tool" type="button" data-chat="close" aria-label="Close" data-tip="Close"><span class="icon" aria-hidden="true"></span></button>
+      </header>
+      <div id="chat-thread" aria-live="polite"></div>
+      <form id="chat-form">
+        <div id="chat-quote" hidden><span id="chat-quoted"></span><button class="tool" type="button" data-chat="unquote" aria-label="Leave the passage out" data-tip="Leave the passage out"><span class="icon" aria-hidden="true"></span></button></div>
+        <div id="chat-box">
+          <textarea id="chat-field" rows="1" placeholder="Ask about this" aria-label="Ask about this" spellcheck="false"></textarea>
+          <button id="chat-send" class="tool" type="submit" aria-label="Ask"><span class="icon" aria-hidden="true"></span></button>
+        </div>
+      </form>
+      </div>
+    </aside>
 
     <!-- DOMPurify cleans what comes out of a book before it is put on the page. -->
     <script src="../node_modules/dompurify/dist/purify.min.js"></script>

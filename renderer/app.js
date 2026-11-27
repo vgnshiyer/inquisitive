@@ -1791,7 +1791,7 @@ function read(item) {
   save();
   $('place').textContent = Math.round(item.progress * 100) + '%';
   contentsTool.hidden = !item.chapters; // only what has chapters has contents (a real book says, once it is open)
-  findTool.hidden = lightsTool.hidden = !item.file; // a stand-in has no words of its own to look through, or to highlight
+  findTool.hidden = lightsTool.hidden = askTool.hidden = !item.file; // a stand-in has no words of its own to look through, to highlight, or to ask about
   wear();
   zone = 'none';
   reveal(false, false);
@@ -2069,6 +2069,7 @@ function note() {
 
 /** Puts a real book away, noting where you were. */
 function shut() {
+  closeChat();
   if (!book) return;
   note();
   closeFind();
@@ -3164,6 +3165,12 @@ function openPicker(range, place, light) {
     node.append(swatch);
   }
   node.append(el('span', 'picker-line'), tool('pen', light?.note ? 'Edit note' : 'Add a note', () => writeNote(made())));
+  // What is chosen can be asked about, in the chat beside the page.
+  const ask = tool('', 'Ask about this', () => (getSelection().removeAllRanges(), askAbout((place ?? light).text)));
+  const star = el('span', 'icon asterisk', '*'); // the chat's mark, as in the top bar
+  star.setAttribute('aria-hidden', 'true');
+  ask.replaceChildren(star);
+  node.append(ask);
   if (light) node.append(tool('bin', 'Remove highlight', () => (getSelection().removeAllRanges(), removeLight(light))));
   node.addEventListener('mousedown', (e) => e.preventDefault()); // a press on it leaves what is selected as it is
   document.body.append(node);
@@ -3672,8 +3679,251 @@ setText();
 // choices as the text panel's, with a few lines of text over them to show what they do. Last,
 // whether a book is read by scrolling or in pages, and whether an article is.
 let about = null; // what the main process says of the app: its version, light or dark, and the library's folder
+// ---------- the chat ----------
+// Beside the page, while it is open: what has been asked about what is being read, and
+// answered, and under that the place to ask. A chat is about the one item, and is kept in
+// the library (chats.js), so it is there to go on with the next time. The model in use is
+// told the item's title and who wrote it; a passage chosen on the page can go with a question.
+
+const askTool = document.querySelector('[data-tool="ask"]');
+/** The chat that is open, while the panel is: the item it is about, the chat's id (null until
+    its first question is kept) and title, the question being answered (`asking`, its id) with
+    the answer as it comes (`answer`), and the passage to go with the next question (`quote`). */
+let talk = null;
+
+/** The page has another width: everything that is laid out by it is told, as when the window changes size. */
+const rewidth = () => window.dispatchEvent(new Event('resize'));
+let slid = 0;
+/** The same, once the chat has slid in or out (style.css: as long as the rail takes). */
+function reslide() {
+  clearTimeout(slid);
+  slid = setTimeout(rewidth, 260);
+}
+
+// How wide the chat is: as wide as it was last dragged to be, by its left edge (kept between
+// runs), or, never dragged, a width that goes by the window's. A double click puts that back.
+const CHAT_WIDE = [280, 640];
+function setChatWide(wide) {
+  if (wide) document.body.style.setProperty('--chat-wide', wide + 'px');
+  else document.body.style.removeProperty('--chat-wide');
+}
+setChatWide(Number(localStorage.getItem('chat')) || 0);
+$('chat-edge').addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  e.preventDefault(); // (nothing on the page is selected by the drag)
+  const edge = e.currentTarget;
+  let wide = 0;
+  edge.setPointerCapture(e.pointerId);
+  document.body.classList.add('chat-sizing'); // (the pointer is the edge's, wherever it goes: style.css)
+  const move = (to) => setChatWide((wide = Math.round(Math.max(CHAT_WIDE[0], Math.min(CHAT_WIDE[1], innerWidth - to.clientX)))));
+  const done = () => {
+    edge.removeEventListener('pointermove', move);
+    edge.removeEventListener('pointerup', done);
+    edge.removeEventListener('pointercancel', done);
+    document.body.classList.remove('chat-sizing');
+    if (!wide) return; // (pressed, and not moved)
+    localStorage.setItem('chat', String(wide));
+    rewidth();
+  };
+  edge.addEventListener('pointermove', move);
+  edge.addEventListener('pointerup', done);
+  edge.addEventListener('pointercancel', done);
+});
+$('chat-edge').addEventListener('dblclick', () => {
+  localStorage.removeItem('chat');
+  setChatWide(0);
+  rewidth();
+});
+
+/** One thing said, for the thread: a question, with the passage it was asked of, or an answer. */
+function saying(message) {
+  if (message.role === 'user') {
+    const made = el('div', 'chat-asked');
+    if (message.quote) made.append(el('blockquote', 'chat-passage', message.quote));
+    made.append(el('p', '', message.text));
+    return made;
+  }
+  const made = el('div', 'chat-answer');
+  made.append(el('div', 'chat-words', message.text));
+  if (message.state === 'stopped') made.append(el('p', 'chat-state', 'Stopped'));
+  return made;
+}
+
+/** Brings the thread to its end: always, or (with `following`) only if it was there already,
+    so that an answer coming in does not pull the thread from under someone reading back. */
+function toEnd(following) {
+  const thread = $('chat-thread');
+  if (!following || thread.scrollHeight - thread.scrollTop - thread.clientHeight < 80) thread.scrollTop = thread.scrollHeight;
+}
+
+/** The field is as tall as what is written in it, up to a few lines. */
+function fitField() {
+  const field = $('chat-field');
+  field.style.height = 'auto';
+  field.style.height = Math.min(field.scrollHeight, 132) + 'px';
+}
+
+/** Sets the passage that goes with the next question; none takes it away. */
+function setQuote(text) {
+  if (!talk) return;
+  talk.quote = text;
+  $('chat-quoted').textContent = text;
+  $('chat-quote').hidden = !text;
+}
+
+/** The panel's name for the chat, and whether an answer is on its way (the button that asks then stops it). */
+function drawChat() {
+  $('chat-title').textContent = talk.title || 'New chat';
+  const busy = Boolean(talk.asking);
+  $('chat-form').toggleAttribute('data-busy', busy);
+  $('chat-send').setAttribute('aria-label', busy ? 'Stop' : 'Ask');
+}
+
+/** Shows a chat that is kept: everything said in it, at its end. */
+async function showChat(id) {
+  const mine = talk;
+  const kept = await window.api.chats.read(id);
+  if (!kept || talk !== mine || mine.asking) return;
+  mine.chat = kept.chat.id;
+  mine.title = kept.chat.title;
+  $('chat-thread').replaceChildren(...kept.messages.map(saying));
+  drawChat();
+  toEnd();
+}
+
+/** Starts a chat afresh: nothing is kept of it until something is asked. */
+function newChat() {
+  if (!talk) return;
+  if (talk.asking) window.api.chats.stop(talk.asking);
+  Object.assign(talk, { chat: null, title: '', asking: null, answer: null });
+  $('chat-thread').replaceChildren();
+  drawChat();
+  $('chat-field').focus();
+}
+
+/** Opens the chat beside the page, on the chat about this item that was last added to (a
+    new one, if there is none). */
+async function openChat() {
+  if (!open?.file) return;
+  if (talk) return void $('chat-field').focus();
+  closeMenu();
+  closePanel();
+  closeFind();
+  closeLights();
+  closePicker();
+  const mine = (talk = { item: open, chat: null, title: '', asking: null, answer: null, quote: '' });
+  $('chat-thread').replaceChildren();
+  $('chat-field').value = '';
+  setQuote('');
+  drawChat();
+  $('chat').inert = false;
+  document.body.dataset.chat = '';
+  askTool.classList.add('on');
+  askTool.setAttribute('aria-expanded', 'true');
+  reslide();
+  fitField();
+  $('chat-field').focus({ preventScroll: true });
+  const [last] = await window.api.chats.list(mine.item.file);
+  if (last && talk === mine && !mine.chat && !mine.asking) showChat(last.id); // (unless something was asked meanwhile)
+}
+
+/** Puts the chat away. An answer still on its way is stopped: what had come of it is kept. */
+function closeChat() {
+  if (!talk) return;
+  if (talk.asking) window.api.chats.stop(talk.asking);
+  talk = null;
+  $('chat').inert = true; // (what it shows stays as it is while it slides away)
+  delete document.body.dataset.chat;
+  askTool.classList.remove('on');
+  askTool.setAttribute('aria-expanded', 'false');
+  reslide();
+}
+
+/** Asks about a passage of the page: the chat opens (if it is not) with the passage over the field. */
+function askAbout(passage) {
+  openChat();
+  setQuote(String(passage ?? '').replace(/\s+/g, ' ').trim());
+  $('chat-field').focus();
+}
+
+/** Asks what is written in the field (or, while an answer is coming, stops it). The question
+    goes on the thread at once, and under it the answer as it comes. */
+function askChat() {
+  if (!talk) return;
+  const field = $('chat-field');
+  if (talk.asking) return window.api.chats.stop(talk.asking), field.focus();
+  const text = field.value.trim();
+  if (!text) return field.focus();
+  const id = 'chat' + Date.now();
+  const quote = talk.quote;
+  const node = el('div', 'chat-answer');
+  const words = el('div', 'chat-words');
+  words.append(tick());
+  node.append(words);
+  talk.asking = id;
+  talk.answer = { node, words, text: '' };
+  $('chat-thread').append(saying({ role: 'user', text, quote }), node);
+  field.value = '';
+  fitField();
+  setQuote('');
+  drawChat();
+  toEnd();
+  window.api.chats.ask(id, { chat: talk.chat ?? undefined, file: talk.item.file, text, quote, about: { title: talk.item.title, author: talk.item.author } });
+}
+
+// What comes of a question: first that it is kept (and, of a new chat, what it is called),
+// then the answer piece by piece, then how it ended.
+window.api.chats.onPart((id, part) => {
+  if (!talk || id !== talk.asking) return;
+  const { answer } = talk;
+  if (part.chat) {
+    talk.chat = part.chat.id;
+    talk.title = part.chat.title;
+    return drawChat();
+  }
+  if (part.delta) {
+    answer.text += part.delta;
+    answer.words.textContent = answer.text;
+    return toEnd(true);
+  }
+  talk.asking = null;
+  talk.answer = null;
+  // The answer as it was kept takes the place of the one that was coming; if nothing came, it goes.
+  const kept = part.answer ? saying(part.answer) : null;
+  if (kept) answer.node.replaceWith(kept);
+  else answer.node.remove();
+  if (part.stopped && !kept) $('chat-thread').append(el('p', 'chat-state', 'Stopped'));
+  if (part.error) $('chat-thread').append(el('p', 'chat-state wrong', part.error));
+  drawChat();
+  toEnd(true);
+});
+
+askTool.addEventListener('click', () => (talk ? closeChat() : openChat()));
+$('chat-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  askChat();
+});
+$('chat-field').addEventListener('input', fitField);
+$('chat-field').addEventListener('keydown', (e) => {
+  // Return asks; Shift-Return starts a new line.
+  if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+  e.preventDefault();
+  if (!talk?.asking) askChat();
+});
+document.querySelector('[data-chat="close"]').addEventListener('click', closeChat);
+document.querySelector('[data-chat="new"]').addEventListener('click', newChat);
+document.querySelector('[data-chat="unquote"]').addEventListener('click', () => (setQuote(''), $('chat-field').focus()));
+// The chats about this item, the one last added to first; choosing one shows it.
+document.querySelector('[data-chat="list"]').addEventListener('click', async (e) => {
+  const button = e.currentTarget;
+  const mine = talk;
+  const kept = await window.api.chats.list(mine.item.file);
+  if (talk !== mine) return;
+  openMenu(kept.length ? kept.map((chat) => ({ name: chat.title, on: chat.id === mine.chat, run: () => (mine.asking && window.api.chats.stop(mine.asking), (mine.asking = null), showChat(chat.id)) })) : ['No chats yet'], button, true);
+});
+
 let helper = null; // how things stand with the intelligence: signed in with ChatGPT or not, which way, and as whom
-let counted = null; // how many models the sign-in can ask, once that has been asked for (and then in words)
+let proven = false; // whether ChatGPT's sign-in has been tried since it was made, by asking for its models
 window.api.assistant.status().then((now) => {
   helper = now;
   if (tab.settings && !open) settled?.();
@@ -4040,7 +4290,7 @@ function settings() {
   const heard = (now) => {
     if (now.why) window.api.library.notify(now.why);
     helper = now.why || now.none ? { ...helper, waiting: false } : now;
-    counted = null;
+    proven = false;
     refresh();
     relink(); // (what is connected, and so the model in use, may have changed with it)
   };
@@ -4063,11 +4313,11 @@ function settings() {
       ? helper?.waiting
         ? 'Finish signing in in your browser.'
         : helper?.signedIn
-          ? [helper.way === 'codex' ? 'Signed in as Codex does' : 'Using your ChatGPT plan', helper.email, counted].filter(Boolean).join(' · ')
+          ? helper.email
           : 'Sign in to ask about what you read.'
       : p.api
         ? `${p.models[0]?.name || p.model}, ${p.local ? 'on this Mac' : p.hasKey ? 'with your API key' : `at ${p.host}`}.`
-        : `Your ${p.name} subscription, through ${p.tool}.`;
+        : `${p.name} subscription`;
   /** What the menu of a held connection offers. */
   const more = (p) =>
     p.id === 'chatgpt'
@@ -4091,7 +4341,7 @@ function settings() {
         const made = el('div', 'set-row');
         const control = el('div', 'set-buttons');
         control.append(...controls.filter(Boolean));
-        made.append(el('div', 'set-name', name), el('div', 'set-more', line), control);
+        made.append(el('div', 'set-name', name), ...(line ? [el('div', 'set-more', line)] : []), control);
         return made;
       };
       connections.replaceChildren(
@@ -4130,16 +4380,17 @@ function settings() {
           dots.addEventListener('click', () => openMenu(more(p), dots));
           return plain(p.name, said(p), state, toggle, dots);
         }),
-        plain('Another model', 'With an API key, or running on this Mac.', pill('Add', () => addModel())),
+        plain('Another model', '', pill('Add', () => addModel())),
       );
     }
     switches.forEach((run) => run());
-    // (Asking ChatGPT for its models is also the proof that the sign-in works.)
-    if (helper?.signedIn && counted === null) {
-      counted = '';
+    // (Asking ChatGPT for its models is the proof that the sign-in still works: if it has
+    // run out, the row goes back to Connect.)
+    if (helper?.signedIn && !proven) {
+      proven = true;
       window.api.assistant.models().then((had) => {
-        counted = had.models ? `${had.models.length} ${had.models.length === 1 ? 'model' : 'models'}` : '';
-        if (had.signedOut) helper = { ...helper, signedIn: false };
+        if (!had.signedOut) return;
+        helper = { ...helper, signedIn: false };
         refresh();
       });
     }
@@ -4183,11 +4434,11 @@ function settings() {
   const sub = (name) => el('h3', 'set-sub', name);
   const models = el('div', 'set-rows');
   models.append(
-    row('Default model', choose, { more: 'Used whenever you ask about what you read.' }),
-    row('Reasoning', reasoning, { more: () => (levels().length || !linked?.model ? 'How much the model thinks before it answers.' : 'Not available for this model.') }),
+    row('Default model', choose),
+    row('Reasoning', reasoning, { more: () => (levels().length || !linked?.model ? '' : 'Not available for this model.') }),
   );
   const minds = el('section', 'set');
-  minds.append(el('h2', 'set-head', 'Intelligence'), sub('Connections'), connections, el('p', 'set-note', 'Inquisitive uses AI only when you ask. API keys stay in this Mac’s Keychain.'), sub('Model'), models);
+  minds.append(el('h2', 'set-head', 'Intelligence'), sub('Connections'), connections, sub('Model'), models);
   relink(true); // (this Mac is looked over for Claude Code each time the page is opened)
 
   // A few lines set as what you read is set, in the theme you read in.
@@ -4311,6 +4562,7 @@ window.addEventListener('keydown', (e) => {
   else if (panel) closePanel(); // or the text panel,
   else if (finder) closeFind(); // or the find panel,
   else if (lister) closeLights(); // or the list of highlights,
+  else if (talk) closeChat(); // or the chat,
   else if (open) showLibrary(); // or what is being read,
   else if (palette) (palette = null), gliding(drawShelf); // or puts the colours away
 });

@@ -82,7 +82,7 @@ contextBridge.exposeInMainWorld('api', {
     list: (file) => ipcRenderer.invoke('chats:list', file),
     /** A chat and everything said in it: { chat, messages }, or null. */
     read: (id) => ipcRenderer.invoke('chats:read', id),
-    /** Ask in a chat, and keep the question and the answer: `request` is { chat, text, quote }, or { file, text, quote } to begin a new chat about an item. The model in use answers (connections). What happens comes to `onPart` under this id. */
+    /** Ask in a chat, and keep the question and the answer: `request` is { chat, text, quote, about }, or { file, text, quote, about } to begin a new chat about an item; `about` is { title, author }, which the model is told. The model in use answers (connections). What happens comes to `onPart` under this id. */
     ask: (id, request) => ipcRenderer.send('chats:ask', String(id), request),
     /** Stop an answer that is coming: what had come of it is kept. */
     stop: (id) => ipcRenderer.send('chats:stop', String(id)),
