@@ -1132,6 +1132,120 @@ body > main[hidden] {
   -webkit-line-clamp: 1;
 }
 
+/* ---------- the Finished page ---------- */
+
+/* What has been finished, as a line down the page. Each month is a row of three: its name
+   and how many, set against the line; the line, with the month's mark on it; and the month's
+   cards. The names are all one column, as wide as the longest of them. The line is drawn row
+   by row and is one line, since the rows touch (what parts one month from the next is under
+   its cards). It gives way a little around each mark, so the mark needs no ground of its own. */
+.timeline {
+  --mark: 9px; /* a month's mark */
+  --mark-top: 6px; /* from the top of the row: level with the middle of the name */
+  display: grid;
+  grid-template-columns: max-content 30px minmax(0, 1fr);
+}
+
+.era {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+}
+
+.era-when {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+  font-size: calc(var(--text-size) + 1px);
+  font-weight: 500;
+}
+
+.era-mark {
+  position: relative;
+  background:
+    linear-gradient(var(--line), var(--line)) center top / 1px calc(var(--mark-top) - 5px) no-repeat,
+    linear-gradient(var(--line), var(--line)) center calc(var(--mark-top) + var(--mark) + 5px) / 1px 100% no-repeat;
+}
+
+.era-mark::before {
+  content: '';
+  position: absolute;
+  top: var(--mark-top);
+  left: calc(50% - var(--mark) / 2);
+  width: var(--mark);
+  height: var(--mark);
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+/* (Above the first mark there is nothing for the line to come from.) */
+.era:first-child .era-mark {
+  background-size: 0 0, 1px 100%;
+}
+
+.era > .cards {
+  padding-bottom: 36px;
+}
+
+.era:last-child > .cards {
+  padding-bottom: 0;
+}
+
+/* Where the year turns: its number, small, and a smaller mark. */
+.era-turn {
+  --mark: 5px;
+  --mark-top: 5px;
+  min-height: 38px;
+}
+
+.era-turn .era-mark::before {
+  background: var(--muted);
+}
+
+.era-year {
+  justify-self: end;
+  color: var(--muted);
+  font: 400 calc(var(--text-size) - 1px) / 15px var(--font-mono);
+}
+
+/* In a narrow window there is no room for the names beside the line: the line keeps to the
+   left edge, and each month's name stands over its cards. */
+@media (max-width: 720px) {
+  .timeline {
+    grid-template-columns: 22px minmax(0, 1fr);
+  }
+
+  .era-mark {
+    grid-row: 1 / span 2;
+    grid-column: 1;
+    background-position: 4px top, 4px calc(var(--mark-top) + var(--mark) + 5px);
+  }
+
+  .era-mark::before {
+    left: calc(4.5px - var(--mark) / 2);
+  }
+
+  .era-when,
+  .era-year {
+    grid-row: 1;
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .era-when {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 10px;
+    margin: 0 0 12px;
+  }
+
+  .era > .cards {
+    grid-row: 2;
+    grid-column: 2;
+  }
+}
+
 /* ---------- an empty library ---------- */
 /* In place of items, on Home and Library: a quotation under a large mark, then what to do
    and the button that does it. Set to the left, like everything else. */
@@ -4137,7 +4251,9 @@ body.chat-sizing {
   flex-direction: column;
   gap: 14px;
   min-height: 0;
-  padding: 58px 16px 16px; /* (its first line stands clear of the head, and of the mist under it) */
+  /* (Its first line stands clear of the head, and of the mist under it; its last, as clear of
+     the field and the mist over that: see the form.) */
+  padding: 58px 16px calc(var(--chat-foot, 56px) + 14px);
   overflow-y: auto;
   cursor: auto;
   user-select: text;
@@ -4500,9 +4616,34 @@ body.chat-sizing {
 
 /* Where to ask: a field that grows with what is written, on a wash, with the button that
    asks at its foot; over the field, the passage that will go with the question. */
+/* At the foot it is as at the head: the thread runs under the field to the foot of the chat,
+   and a mist between the two blurs what is beneath and washes it with the paper, fully
+   behind the field and then less and less up to where the thread's last line stands, so
+   that what is said does not end at an edge there either. --chat-foot is how far the top of
+   the field is from the foot of the chat (app.js keeps it, as the field grows and a passage
+   is put over it). */
+#chat-inner::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  height: calc(var(--chat-foot, 56px) + 14px);
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  -webkit-mask-image: linear-gradient(to top, #000 calc(var(--chat-foot, 56px) - 8px), transparent);
+  mask-image: linear-gradient(to top, #000 calc(var(--chat-foot, 56px) - 8px), transparent);
+  pointer-events: none;
+}
+
 #chat-form {
-  flex: none;
-  margin: 0 12px 12px;
+  position: absolute; /* (over the thread, and over the mist) */
+  right: 12px;
+  bottom: 12px;
+  left: 12px;
+  z-index: 2;
   padding: 6px;
   border-radius: 20px;
   background: var(--hover);

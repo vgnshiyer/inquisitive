@@ -457,7 +457,7 @@ function choose(id, shelf = null) {
 // to be felt more than seen. A page arrives when you turn to it from another, when you come
 // back to the library from reading, and when the app opens; not when it is drawn again
 // where it stands (a book added, a filter chosen), which would be a flicker.
-const ARRIVING = '#heading, #heading-under, #heading-side > *, #shelf-body :is(.shelf-tools, .band-head, .card, .recall, .band-none, .set-head, .set-lead, .set-sample, .set-row, .set-prompts, .set-foot, .begin > *)';
+const ARRIVING = '#heading, #heading-under, #heading-side > *, #shelf-body :is(.shelf-tools, .band-head, .era-when, .era-year, .card, .recall, .band-none, .set-head, .set-lead, .set-sample, .set-row, .set-prompts, .set-foot, .begin > *)';
 
 function arrive() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -559,17 +559,35 @@ function finishedSoFar() {
   return [now ? `${now} this year` : '', done.length > now ? `${done.length} in all` : ''].filter(Boolean).join(' · ');
 }
 
-/** What has been finished, the latest first, under the month it was finished in: "November",
-    or "December 2025" for a month of another year. What has no day to it comes last. */
+/** What has been finished, the latest first, as a line down the page: a mark on it for each
+    month something was finished in, that month's name and how many beside the mark, and
+    across from them the month's cards. Where the year changes, the earlier year is named on
+    the line. What has no day to it comes last, as "Earlier". */
 function finishedByMonth(list) {
-  const year = new Date().getFullYear();
   const months = new Map();
   for (const item of [...list].sort((a, b) => when(b.finished) - when(a.finished))) {
     const on = item.finished == null ? null : new Date(item.finished);
-    const name = !on ? 'Earlier' : on.toLocaleDateString(undefined, { month: 'long', ...(on.getFullYear() === year ? {} : { year: 'numeric' }) });
-    months.set(name, [...(months.get(name) ?? []), item]);
+    const key = on ? on.getFullYear() + ' ' + on.getMonth() : 'earlier';
+    if (!months.has(key)) months.set(key, { name: on ? on.toLocaleDateString(undefined, { month: 'long' }) : 'Earlier', year: on ? on.getFullYear() : null, among: [] });
+    months.get(key).among.push(item);
   }
-  return [...months].map(([name, among]) => band(name, grid(among, 'short', true), among.length));
+  const made = el('div', 'timeline');
+  let year = new Date().getFullYear();
+  for (const { name, year: of, among } of months.values()) {
+    if (of != null && of !== year) {
+      // The year turns: its number on the line, over the months of it.
+      year = of;
+      const turn = el('div', 'era era-turn');
+      turn.append(el('span', 'era-year', String(of)), el('span', 'era-mark'));
+      made.append(turn);
+    }
+    const era = el('section', 'era');
+    const said = el('div', 'era-when');
+    said.append(el('span', 'era-name', name), el('span', 'count', String(among.length)));
+    era.append(said, el('span', 'era-mark'), grid(among, 'short', true));
+    made.append(era);
+  }
+  return [made];
 }
 
 /** A card: what kind of thing it is and how long, its title, who wrote it, and a line showing
@@ -2039,6 +2057,11 @@ function read(item) {
   findTool.hidden = lightsTool.hidden = askTool.hidden = !item.file; // a stand-in has no words of its own to look through, to highlight, or to ask about
   wear();
   zone = 'none';
+  // What is being read has no bar until the pointer asks for one. Left to fade when the
+  // book is opened (style.css), the bar would be seen for a moment with the book's name on
+  // it, and then go: so it, and the mist under it, are out of sight at once, and held so
+  // until that fading would be over.
+  if (document.body.dataset.screen !== 'reading') for (const part of [$('top'), $('mist')]) part.animate([{ opacity: 0 }, { opacity: 0 }], { duration: 300 });
   reveal(false, false);
   window.api.watchPointer(true);
   document.body.dataset.screen = 'reading';
@@ -4400,6 +4423,14 @@ function fitField() {
   field.style.height = 'auto';
   field.style.height = Math.min(field.scrollHeight, 132) + 'px';
 }
+
+// The thread runs under the field to the foot of the chat (style.css), and ends clear of it:
+// it is told how far the field's top is from the foot, whenever the field grows or shrinks
+// or a passage is put over it or taken away. A thread that was at its end stays there.
+new ResizeObserver(() => {
+  $('chat-inner').style.setProperty('--chat-foot', $('chat-form').offsetHeight + 12 + 'px');
+  toEnd(true);
+}).observe($('chat-form'));
 
 /** Sets the passage that goes with the next question; none takes it away. */
 function setQuote(text) {
