@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const library = require('./library.js');
+const assistant = require('./assistant.js');
 
 // A test run can keep its window off the screen (INQUISITIVE_HEADLESS=1), so it does not get
 // in the way of whoever is at the Mac.
@@ -156,6 +157,7 @@ app.whenReady().then(() => {
   // Run from source, the Dock would show Electron's own icon; this gives it the app's.
   if (process.platform === 'darwin' && !app.isPackaged) app.dock.setIcon(path.join(__dirname, 'assets', 'icon.png'));
   library.listen();
+  assistant.listen();
   createWindow();
   app.on('activate', () => {
     if (!win) createWindow();

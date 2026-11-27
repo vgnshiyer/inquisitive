@@ -3252,6 +3252,12 @@ setText();
 // choices as the text panel's, with a few lines of text over them to show what they do. Last,
 // whether a book is read by scrolling or in pages, and whether an article is.
 let about = null; // what the main process says of the app: its version, light or dark, and the library's folder
+let helper = null; // how things stand with the intelligence: signed in with ChatGPT or not, which way, and as whom
+let counted = null; // how many models the sign-in can ask, once that has been asked for (and then in words)
+window.api.assistant.status().then((now) => {
+  helper = now;
+  if (tab.settings && !open) settled?.();
+});
 let settled = null; // brings the page's controls into line with what is chosen, while it is the page shown
 window.api.settings.load().then((told) => {
   about = told;
@@ -3340,6 +3346,53 @@ function settings() {
   const places = el('div', 'set-buttons');
   places.append(reveal, mover);
 
+  // Intelligence: signed in with ChatGPT or not, and the buttons that go with each. (What
+  // comes of a sign-in is shown on whichever Settings page is up by then: `settled`.)
+  const chat = el('div', 'set-buttons');
+  const press = (name, run) => {
+    const made = el('button', 'set-button', name);
+    made.type = 'button';
+    made.addEventListener('click', run);
+    return made;
+  };
+  const refresh = () => tab.settings && !open && settled?.();
+  const heard = (now) => {
+    if (now.why) window.api.library.notify(now.why);
+    helper = now.why || now.none ? { ...helper, waiting: false } : now;
+    counted = null;
+    refresh();
+  };
+  const begin = (way) => () => {
+    helper = { ...helper, waiting: true };
+    refresh();
+    window.api.assistant.signIn(way).then(heard);
+  };
+  syncs.push(() => {
+    if (helper?.waiting) {
+      // Giving up is shown at once; the sign-in itself is told to stop behind it.
+      return chat.replaceChildren(press('Cancel', () => {
+        helper = { ...helper, waiting: false };
+        window.api.assistant.cancel();
+        refresh();
+      }));
+    }
+    if (!helper?.signedIn) return chat.replaceChildren(press('Continue with ChatGPT', begin('plan')), press('Sign in with Codex', begin('codex')));
+    chat.replaceChildren(...(helper.way === 'codex' ? [] : [press('Manage usage', () => window.api.assistant.usage())]), press('Sign out', () => window.api.assistant.signOut().then((now) => {
+      heard(now);
+      if (now.confirmed === false) window.api.library.notify('You are signed out here. ChatGPT did not confirm it, so to be sure, disconnect Inquisitive in ChatGPT’s settings, under Security and login.');
+    })));
+    // (Asking for the models is also the proof that the sign-in works.)
+    if (counted === null) {
+      counted = '';
+      window.api.assistant.models().then((had) => {
+        counted = had.models ? `${had.models.length} ${had.models.length === 1 ? 'model' : 'models'}` : '';
+        if (had.signedOut) helper = { ...helper, signedIn: false };
+        refresh();
+      });
+    }
+  });
+  const using = () => (helper?.waiting ? 'Finish signing in in your browser.' : helper?.signedIn ? [helper.way === 'codex' ? 'Signed in as Codex does' : 'Using your ChatGPT plan', helper.email, counted].filter(Boolean).join(' · ') : 'Sign in to ask about what you read.');
+
   // A few lines set as what you read is set, in the theme you read in.
   const sample = el('div', 'set-sample');
   sample.append(el('p', '', SAMPLE_LINES));
@@ -3409,6 +3462,7 @@ function settings() {
       row('Books', text('reading', READINGS)),
       row('Articles', text('readingArticles', READINGS)),
     ),
+    part('Intelligence', '', null, row('ChatGPT', chat, { more: using })),
     foot,
   );
   sync();
