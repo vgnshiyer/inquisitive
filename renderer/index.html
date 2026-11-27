@@ -43,7 +43,15 @@
       <button class="tab" type="button" data-tab="home" aria-label="Home"><span class="icon" aria-hidden="true"></span><span class="tab-name">Home</span></button>
       <button class="tab" type="button" data-tab="library" aria-label="Library"><span class="icon" aria-hidden="true"></span><span class="tab-name">Library</span></button>
       <button class="tab" type="button" data-tab="finished" aria-label="Finished"><span class="icon" aria-hidden="true"></span><span class="tab-name">Finished</span></button>
-      <button class="tab" type="button" data-tab="collections" aria-label="Collections"><span class="icon" aria-hidden="true"></span><span class="tab-name">Collections</span></button>
+      <!-- Wide, the Collections tab has an arrow at its end, which folds away the list under
+           it: the collections in their order, each to be gone to, or dragged to another place. -->
+      <div class="tab-fold">
+        <button class="tab" type="button" data-tab="collections" aria-label="Collections"><span class="icon" aria-hidden="true"></span><span class="tab-name">Collections</span></button>
+        <button id="rail-fold" type="button" aria-controls="rail-shelves"><span class="icon" aria-hidden="true"></span></button>
+      </div>
+      <div id="rail-shelves"></div>
+      <!-- The app's name, shown while the rail is wide. -->
+      <div id="rail-mark" aria-hidden="true"><span>inquisitive<span class="star">*</span></span></div>
       <button class="tab foot" type="button" data-tab="settings" aria-label="Settings"><span class="icon" aria-hidden="true"></span><span class="tab-name">Settings</span></button>
     </nav>
 
@@ -84,7 +92,7 @@
       <div id="chat-inner">
       <header id="chat-head">
         <h2 id="chat-title"></h2>
-        <button class="tool" type="button" data-chat="list" aria-label="Chats about this" data-tip="Chats about this"><span class="icon" aria-hidden="true"></span></button>
+        <button class="tool" type="button" data-chat="list" aria-label="Previous chats" data-tip="Previous chats"><span class="icon" aria-hidden="true"></span></button>
         <button class="tool" type="button" data-chat="new" aria-label="New chat" data-tip="New chat"><span class="icon" aria-hidden="true"></span></button>
         <button class="tool" type="button" data-chat="close" aria-label="Close" data-tip="Close"><span class="icon" aria-hidden="true"></span></button>
       </header>
@@ -92,7 +100,7 @@
       <form id="chat-form">
         <div id="chat-quote" hidden><span id="chat-quoted"></span><button class="tool" type="button" data-chat="unquote" aria-label="Leave the passage out" data-tip="Leave the passage out"><span class="icon" aria-hidden="true"></span></button></div>
         <div id="chat-box">
-          <textarea id="chat-field" rows="1" placeholder="Ask about this" aria-label="Ask about this" spellcheck="false"></textarea>
+          <textarea id="chat-field" rows="1" placeholder="Ask about this book" aria-label="Ask about this book" spellcheck="false"></textarea>
           <button id="chat-send" class="tool" type="submit" aria-label="Ask"><span class="icon" aria-hidden="true"></span></button>
         </div>
       </form>
@@ -109,6 +117,8 @@
     <script src="article.js"></script>
     <!-- PDF.js reads PDFs; pdf.js here is the app's way to it. -->
     <script type="module" src="pdf.js"></script>
+    <!-- The lines an empty library shows; app.js picks one. -->
+    <script src="quotes.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -163,8 +163,8 @@ function week() {
   });
 }
 
-/** Beside Home's heading: how long you have read this week, and a bar for each of its days.
-    Nothing, in a week with no reading in it yet. */
+/** Beside Home's heading: a bar for each of this week's days. Nothing, in a week with no
+    reading in it yet. */
 function weekly() {
   const days = week();
   const all = days.reduce((sum, day) => sum + day.seconds, 0);
@@ -180,18 +180,33 @@ function weekly() {
     if (!day.ahead) column.dataset.tip = `${day.date.toLocaleDateString(undefined, { weekday: 'long' })}: ${day.seconds ? span(day.seconds) : 'nothing read'}`;
     bars.append(column);
   }
-  const words = el('div', 'week-words');
-  words.append(el('span', 'week-name', 'This week'), el('span', 'week-time', span(all)));
-  made.append(bars, words);
+  made.append(bars);
   return made;
+}
+
+/** Under Home's greeting: how long you have read today, and this week, in words. Nothing,
+    in a week with no reading in it yet. */
+function readSoFar() {
+  const all = week().reduce((sum, day) => sum + day.seconds, 0);
+  if (!all) return '';
+  const today = spent[dayOf(new Date())] ?? 0;
+  return `${today ? span(today) : '0 min'} today · ${span(all)} this week`;
 }
 
 /** What Home says in place of its name: the time of day. */
 const greeting = (hour = new Date().getHours()) => (hour >= 5 && hour < 12 ? 'Good morning' : hour >= 12 && hour < 17 ? 'Good afternoon' : 'Good evening');
 
-// What an empty library shows in place of items: a line worth reading.
-const QUOTE = { text: 'The only true wisdom is in knowing you know nothing.', by: 'Socrates' };
+// What an empty library shows in place of items: a line worth reading. It is one of those
+// kept in quotes.js, picked when the app opens and kept for as long as it is open. (A test
+// run shows the first of them, so that its pictures are the same each time; and if the file
+// cannot be read, there is still this one.)
+const QUOTE = (() => {
+  const kept = (typeof SAYINGS === 'undefined' || !Array.isArray(SAYINGS) ? [] : SAYINGS).filter((said) => typeof said?.text === 'string' && said.text.trim());
+  const said = kept[new URLSearchParams(location.search).has('quiet') ? 0 : Math.floor(Math.random() * kept.length)] ?? { text: 'The only true wisdom is in knowing you know nothing.', by: 'Socrates' };
+  return { text: said.text.trim(), by: String(said.by ?? '').trim() };
+})();
 let tab = TABS[0]; // the tab chosen on the rail
+let shelfOnly = null; // on the Collections page: the one collection shown by itself (its id), if it was chosen by name on the rail
 let open = null; // the item being read, if any
 // Which kinds Library and Collections each show, and in what order. Each keeps its own.
 const looks = { library: { kind: 'all', sort: 'opened' }, collections: { kind: 'all', sort: 'opened' } };
@@ -405,19 +420,33 @@ function drawRail() {
     if (wide) delete button.dataset.tip;
     else button.dataset.tip = button.getAttribute('aria-label');
     button.dataset.tipSide = 'right';
-    if (button.dataset.tab === tab.id) button.setAttribute('aria-current', 'true');
+    // (Where one collection is shown by itself and its name is there on the rail to be
+    // seen, it is that name that is marked, not the Collections tab.)
+    if (button.dataset.tab === tab.id && !(tab.shelves && shelfShown())) button.setAttribute('aria-current', 'true');
     else button.removeAttribute('aria-current');
   }
+  drawRailShelves();
 }
 
-function choose(id) {
+/** The collection shown by itself, if its row on the rail can be seen (the rail is wide, and
+    the list is not folded away). */
+const shelfShown = () => (wide && !shelvesFolded && collections.find((c) => c.id === shelfOnly)) || null;
+
+function choose(id, shelf = null) {
   const was = tab;
+  const wasOnly = shelfOnly;
   tab = TABS.find((entry) => entry.id === id);
+  shelfOnly = tab.shelves ? shelf : null; // (one collection by itself, if it was asked for by name on the rail)
+  // Going to the Collections page opens the list of them on the rail, if it was folded away.
+  if (tab.shelves && shelvesFolded) {
+    shelvesFolded = false;
+    localStorage.setItem('shelves', 'open');
+  }
   drawRail();
   drawShelf();
   drawCrumbs();
   $('library').scrollTop = 0;
-  if (tab !== was) arrive();
+  if (tab !== was || shelfOnly !== wasOnly) arrive();
 }
 
 // A page of the library arrives: its heading, then each line of it down the window, fades
@@ -425,7 +454,7 @@ function choose(id) {
 // to be felt more than seen. A page arrives when you turn to it from another, when you come
 // back to the library from reading, and when the app opens; not when it is drawn again
 // where it stands (a book added, a filter chosen), which would be a flicker.
-const ARRIVING = '#heading, #heading-side > *, #shelf-body :is(.shelf-tools, .band-head, .card, .band-new, .band-none, .set-head, .set-lead, .set-sample, .set-row, .set-foot, .begin > *)';
+const ARRIVING = '#heading, #heading-under, #heading-side > *, #shelf-body :is(.shelf-tools, .band-head, .card, .recall, .band-new, .band-none, .set-head, .set-lead, .set-sample, .set-row, .set-prompts, .set-foot, .begin > *)';
 
 function arrive() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -514,36 +543,47 @@ function gliding(draw) {
 /** How long an item is: pages if it has them, else minutes of reading. */
 const lengthOf = (item) => (item.pages ? item.pages + ' pages' : item.minutes ? item.minutes + ' min' : '');
 
-/** When an item was last open, in words. */
-function openedOf(item) {
-  const days = daysSince(item.opened);
-  return days <= 0 ? 'Opened today' : days === 1 ? 'Opened yesterday' : `Opened ${days} days ago`;
+/** The day an item was finished, in words: "16 Nov". (Its month's heading says the rest.) */
+function finishedOf(item) {
+  if (item.finished == null) return '';
+  return new Date(item.finished).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
-/** When an item was finished, in words: "Finished 16 Nov", with the year if it is not this one. */
-function finishedOf(item) {
-  if (item.finished == null) return 'Finished';
-  const on = new Date(item.finished);
-  const year = on.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' };
-  return 'Finished ' + on.toLocaleDateString(undefined, { day: 'numeric', month: 'short', ...year });
+/** How much has been finished, in words: "5 this year · 12 in all". */
+function finishedSoFar() {
+  const done = items.filter((item) => item.progress >= 1);
+  const year = new Date().getFullYear();
+  const now = done.filter((item) => item.finished != null && new Date(item.finished).getFullYear() === year).length;
+  return [now ? `${now} this year` : '', done.length > now ? `${done.length} in all` : ''].filter(Boolean).join(' · ');
+}
+
+/** What has been finished, the latest first, under the month it was finished in: "November",
+    or "December 2025" for a month of another year. What has no day to it comes last. */
+function finishedByMonth(list) {
+  const year = new Date().getFullYear();
+  const months = new Map();
+  for (const item of [...list].sort((a, b) => when(b.finished) - when(a.finished))) {
+    const on = item.finished == null ? null : new Date(item.finished);
+    const name = !on ? 'Earlier' : on.toLocaleDateString(undefined, { month: 'long', ...(on.getFullYear() === year ? {} : { year: 'numeric' }) });
+    months.set(name, [...(months.get(name) ?? []), item]);
+  }
+  return [...months].map(([name, among]) => band(name, grid(among, 'short', true), among.length));
 }
 
 /** A card: what kind of thing it is and how long, its title, who wrote it, and a line showing
-    how far you are. Pointed at, the place gives way to an arrow: it opens. A lead card is
-    the same thing writ large, across the page. A dated card says when it was finished, in
-    place of the line. */
-function card(item, lead, dated) {
-  const made = el('button', lead ? 'card lead' : 'card');
+    how far you are. Pointed at, the place gives way to an arrow: it opens. A dated card
+    says when it was finished, in place of the line. */
+function card(item, dated) {
+  const made = el('button', 'card');
   made.type = 'button';
   made.dataset.hue = hueOf(item);
   const head = el('span', 'card-head');
   head.append(el('span', '', KINDS[item.kind]));
   if (lengthOf(item)) head.append(el('span', '', lengthOf(item))); // a real book has no count of pages
-  if (lead) head.append(el('span', '', openedOf(item)));
   const end = el('span', 'card-end');
   const foot = el('span', 'card-foot');
   if (dated) {
-    // On the Finished page every line would be full and every place "Finished": say when.
+    // On the Finished page every line would be full and every place "Finished": say which day.
     end.append(el('span', 'card-go'));
     foot.append(el('span', 'card-when', finishedOf(item)), end);
   } else {
@@ -604,7 +644,7 @@ function cardMenu(item) {
 
 function grid(list, className, dated) {
   const made = el('div', className ? 'cards ' + className : 'cards');
-  made.append(...list.map((item) => card(item, false, dated)));
+  made.append(...list.map((item) => card(item, dated)));
   return made;
 }
 
@@ -618,8 +658,8 @@ function band(name, body, count) {
   return made;
 }
 
-/** What to carry on with: the started item you had open last, writ large, then a row of the
-    next few. One left unopened for a month drops out, though the count is of all you have
+/** What to carry on with: the started item you had open last, then the next few, in a row
+    of short cards. One left unopened for a month drops out, though the count is of all you have
     started. After it, what is close to finishing: whatever else you are most of the way
     through, the furthest first, however long ago it was opened. (The one you had open last
     leads Continue however far through it is.) Gives the sections, and the items shown in them. */
@@ -632,39 +672,111 @@ function going() {
   const under = [];
   if (lead) {
     const more = rest.filter((item) => daysSince(when(item.opened)) <= STALE).slice(0, MORE);
-    const made = el('div', 'going');
-    made.append(card(lead, true));
-    if (more.length) made.append(grid(more, 'short row'));
-    bands.push(band('Continue', made, rest.length + 1));
+    bands.push(band('Continue', grid([lead, ...more], 'short'), rest.length + 1));
     under.push(lead, ...more);
   }
   if (near.length) {
     bands.push(band('Close to finishing', grid(near.slice(0, CLOSE), 'short'), near.length));
     under.push(...near.slice(0, CLOSE));
   }
-  return { bands, under };
+  return { bands, under, led: Boolean(lead) };
 }
 
 /** Home: what to carry on with, what is close to finishing, then the latest additions. */
-/** What Home and Library show while the library has nothing in it: a quotation, set large
-    under its mark, then what to do and the button that does it. */
-function begin() {
+/** What a page shows while there is nothing for it to show: a quotation, set large under an
+    opening mark, and a line under it. Home and Library, while the library has nothing in
+    it, say how to begin, and have the button that adds something; with `line` given (the
+    Finished page, while nothing has been finished), that line is said and there is no button. */
+function begin(line) {
   const made = el('div', 'begin');
   const mark = el('span', 'begin-mark', '“');
   mark.setAttribute('aria-hidden', 'true');
+  made.append(mark, el('p', 'begin-quote', QUOTE.text), ...(QUOTE.by ? [el('p', 'begin-by', QUOTE.by)] : []), el('p', 'begin-line', line ?? 'Add a book, a PDF or an article to begin.'));
+  if (line) return made;
   const add = el('button', 'begin-add', 'Add to library');
   add.type = 'button';
   add.addEventListener('click', openAdd);
-  made.append(mark, el('p', 'begin-quote', QUOTE.text), el('p', 'begin-by', QUOTE.by), el('p', 'begin-line', 'Add a book, a PDF or an article to begin.'), add);
+  made.append(add);
   return made;
 }
 
 function home() {
   if (!items.length) return [begin()];
-  const { bands, under } = going();
+  const { bands, under, led } = going();
+  const recall = recallBand(); // one of your highlights, after what you are carrying on with
+  if (recall) bands.splice(led ? 1 : 0, 0, recall);
   // What is already under Continue or Close to finishing is not shown a second time.
   const recent = items.filter((item) => !under.includes(item)).sort((a, b) => b.added - a.added).slice(0, RECENT);
   return [...bands, ...(recent.length ? [band('Recently added', grid(recent))] : [])];
+}
+
+// ---------- one of your highlights, on Home ----------
+// Home shows one thing you highlighted, a different one each day: the words washed with their
+// colour as they are on the page, a note written on them, and what they are from, with an
+// arrow: it opens the book there (and so where you are in the book becomes that place).
+
+const keptLights = new Map(); // what is highlighted in each item, by the item's id: read as the library arrives, and kept up as highlights change
+const LINE_WORDS = 40; // more words than this is a passage, not a line for Home
+
+/** Reads what is highlighted in every item of the library. */
+async function readMarked() {
+  await Promise.all(items.filter((item) => item.file).map(async (item) => {
+    const kept = await window.api.library.highlights(item.file).catch(() => []);
+    keptLights.set(item.id, Array.isArray(kept) ? kept : []);
+  }));
+}
+
+/** A number made of a word's letters: always the same for the same word, and well scattered. */
+function scatter(word) {
+  let made = 2166136261;
+  for (const letter of word) made = Math.imul(made ^ letter.charCodeAt(0), 16777619);
+  return made >>> 0;
+}
+
+/** The highlight Home shows today: { item, light, text }, or nothing if there is none short
+    enough. They are taken in an order of their own, shuffled but always the same, one a day,
+    so that each has its turn before any comes round again. */
+function recalled() {
+  const lines = [];
+  for (const item of items) {
+    for (const light of keptLights.get(item.id) ?? []) {
+      const text = typeof light?.text === 'string' ? light.text.replace(/\s+/g, ' ').trim() : '';
+      if (text && text.split(' ').length <= LINE_WORDS) lines.push({ item, light, text, order: scatter(String(light.id ?? text)) });
+    }
+  }
+  if (!lines.length) return null;
+  lines.sort((a, b) => a.order - b.order);
+  const now = new Date();
+  return lines[Math.floor((now.getTime() - now.getTimezoneOffset() * 60000) / DAY) % lines.length];
+}
+
+function recallBand() {
+  const line = recalled();
+  if (!line) return null;
+  const made = el('button', 'recall');
+  made.type = 'button';
+  const quote = el('span', 'recall-quote');
+  const words = el('span', 'lights-words', line.text);
+  words.dataset.hue = line.light.hue;
+  quote.append(words);
+  made.append(quote);
+  if (line.light.note) made.append(el('span', 'recall-note', line.light.note));
+  const from = el('span', 'recall-from');
+  from.append(el('span', '', [line.item.title, line.item.author].filter(Boolean).join(' · ')), el('span', 'recall-go'));
+  made.append(from);
+  made.addEventListener('click', () => readAt(line.item, line.light));
+  return band('From your highlights', made);
+}
+
+/** Opens an item at one of its highlights: once the book is open and its highlights are read. */
+async function readAt(item, light) {
+  read(item);
+  for (let waited = 0; waited < 200; waited++) {
+    if (open !== item) return; // left meanwhile
+    const there = book?.item === item && book.ready && book.lights.find((other) => other.id === light.id);
+    if (there) return void goLight(there);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
 }
 
 // ---------- the Collections page ----------
@@ -729,12 +841,13 @@ function moveCollection(from, to) {
 
 /** Carry something across the page. A copy of it goes with the pointer; the thing itself
     stays on the page, faded, wherever `place` puts it (`place` is asked again and again,
-    with where the pointer is). Near the top or bottom of the page, the page moves along.
+    with where the pointer is). Near the top or bottom of the page, the page moves along (or
+    whatever else is named as the `scroller`).
     Letting go calls `drop`, and the copy settles onto the faded thing. Escape, or the
     pointer being taken away, puts everything back. `down` is the press that took hold of
-    it, and `now` the pointer's latest move, if it has moved since. */
-function carry(down, held, place, drop, now = down) {
-  const page = $('library');
+    it, and `now` the pointer's latest move, if it has moved since. Afterwards the page is
+    drawn afresh (or `redraw` is called in place of that). */
+function carry(down, held, place, drop, now = down, { scroller: page = $('library'), redraw = drawShelf } = {}) {
   const from = held.getBoundingClientRect();
   const grab = { x: down.clientX - from.left, y: down.clientY - from.top }; // where on it the pointer took hold
   let at = { x: now.clientX, y: now.clientY };
@@ -785,7 +898,7 @@ function carry(down, held, place, drop, now = down) {
     ghost.style.top = to.top + 'px';
     setTimeout(() => {
       ghost.remove();
-      drawShelf();
+      redraw();
     }, 170);
   };
   const cancel = () => {
@@ -816,37 +929,106 @@ function carry(down, held, place, drop, now = down) {
 /** Drag a shelf, by its grip, to another place among the shelves. The faded shelf steps
     from place to place as the pointer passes the others, which slide to make room, so it
     always shows where letting go would put it. */
-function dragShelf(grip, e) {
-  const held = grip.closest('.band');
-  const shelves = () => [...$('shelf-body').querySelectorAll('.band[data-id]')];
-  let settling = 0; // until when the shelves are still sliding into their new places
+function dragRailShelf(held, down, now) {
+  const list = $('rail-shelves');
+  const rows = () => [...list.querySelectorAll('.rail-shelf')];
+  let settling = 0; // until when the rows are still sliding into their new places
 
-  /** Move the faded shelf, and slide the others from where they were to where they now are. */
+  /** Move the faded row, and slide the others from where they were to where they now are. */
   const step = (move) => {
-    const was = new Map(shelves().map((shelf) => [shelf, shelf.getBoundingClientRect().top]));
+    const was = new Map(rows().map((row) => [row, row.getBoundingClientRect().top]));
     move();
-    for (const shelf of shelves()) {
-      const by = was.get(shelf) - shelf.getBoundingClientRect().top;
-      if (by) shelf.animate([{ transform: `translateY(${by}px)` }, { transform: 'none' }], { duration: 180, easing: 'cubic-bezier(0.3, 0, 0.2, 1)' });
+    for (const row of rows()) {
+      const by = was.get(row) - row.getBoundingClientRect().top;
+      if (by) row.animate([{ transform: `translateY(${by}px)` }, { transform: 'none' }], { duration: 180, easing: 'cubic-bezier(0.3, 0, 0.2, 1)' });
     }
     settling = performance.now() + 190;
   };
 
-  /** Put the faded shelf before the first of the others that the pointer is above the middle of. */
+  /** Put the faded row before the first of the others that the pointer is above the middle of. */
   const place = (at) => {
     if (performance.now() < settling) return; // wait for the last step to finish sliding
-    const others = shelves().filter((shelf) => shelf !== held);
-    const next = others.find((shelf) => ((box) => at.y < box.top + box.height / 2)(shelf.getBoundingClientRect()));
+    const others = rows().filter((row) => row !== held);
+    const next = others.find((row) => ((box) => at.y < box.top + box.height / 2)(row.getBoundingClientRect()));
     if (next ? held.nextElementSibling !== next : others.length && others.at(-1).nextElementSibling !== held) step(() => (next ? next.before(held) : others.at(-1).after(held)));
   };
 
-  /** The order is now the one on the page. */
+  /** The order is now the one on the rail. */
   const drop = () => {
-    const order = shelves().map((shelf) => shelf.dataset.id);
+    const order = rows().map((row) => row.dataset.id);
     collections.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
   };
 
-  carry(e, held, place, drop);
+  // (The list is what moves along near its top and bottom; and the page, if it is showing
+  // the shelves, glides into the new order.)
+  carry(down, held, place, drop, now, { scroller: list, redraw: () => gliding(drawShelf) });
+}
+
+// ---------- the collections, on the rail ----------
+// Wide, the rail lists the collections under their tab, in their order: each its colour and
+// its name. A click on one shows its shelf by itself on the Collections page; dragging one
+// moves it among the others, as a shelf was once dragged on the page (the grip that shelf
+// had shows beside it when it is pointed at), and so sets the order of the shelves. Under
+// them is the way to make another, which asks its name and colour. The arrow on the tab
+// folds the list away. (A collection is named again, coloured again and taken away on the
+// page.)
+
+let shelvesFolded = localStorage.getItem('shelves') === 'folded'; // the list is folded away
+
+function drawRailShelves() {
+  if (document.body.classList.contains('dragging')) return; // (not from under something being carried)
+  const list = $('rail-shelves');
+  const fold = $('rail-fold');
+  fold.hidden = !collections.length; // (nothing to fold away)
+  fold.inert = !wide;
+  fold.setAttribute('aria-expanded', String(!shelvesFolded));
+  fold.setAttribute('aria-label', shelvesFolded ? 'Show collections' : 'Hide collections');
+  list.hidden = shelvesFolded && collections.length > 0; // (with none yet, there is still the way to make one)
+  list.inert = !wide;
+  list.replaceChildren(...collections.map((collection) => {
+    const made = el('button', 'rail-shelf');
+    made.type = 'button';
+    made.dataset.id = collection.id;
+    if (tab.shelves && shelfShown() === collection) made.setAttribute('aria-current', 'true');
+    const grip = el('span', 'rail-shelf-grip'); // the sign that it can be dragged: there when it is pointed at
+    grip.setAttribute('aria-hidden', 'true');
+    const dot = el('span', 'rail-shelf-dot');
+    dot.dataset.hue = collection.hue;
+    made.append(grip, dot, el('span', 'rail-shelf-name', collection.name));
+    made.addEventListener('click', () => goShelf(collection));
+    // A press becomes a drag once the pointer has moved a little; until then it is a click.
+    made.addEventListener('pointerdown', (down) => {
+      if (down.button !== 0) return;
+      const move = (now) => {
+        if (Math.hypot(now.clientX - down.clientX, now.clientY - down.clientY) < 6) return;
+        done();
+        dragRailShelf(made, down, now);
+      };
+      const done = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', done);
+        window.removeEventListener('pointercancel', done);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', done);
+      window.addEventListener('pointercancel', done);
+    });
+    return made;
+  }));
+  // Under them, the way to make another.
+  const add = el('button', 'rail-shelf-new');
+  add.type = 'button';
+  const plus = el('span', 'icon');
+  plus.setAttribute('aria-hidden', 'true');
+  add.append(plus, 'New collection');
+  add.addEventListener('click', openNewCollection);
+  list.append(add);
+}
+
+/** Shows one collection's shelf by itself on the Collections page (the page's own tab shows
+    them all again). */
+function goShelf(collection) {
+  choose('collections', collection.id);
 }
 
 /** Drag a card to another shelf, to move its item into that collection (or, onto the shelf
@@ -877,23 +1059,15 @@ function dragCard(item, held, down, now) {
   carry(down, held, place, drop, now);
 }
 
-/** One collection's shelf: a grip to drag it by (in the margin, when pointed at), a dot that
-    changes its colour, its name (type over it to rename it), how many of its items are
-    showing, a rule, and those items as short cards. Items in no collection get a shelf too,
-    which has no grip, no dot and no name to change. */
+/** One collection's shelf: a dot that changes its colour, its name (type over it to rename
+    it), how many of its items are showing, a rule, and those items as short cards. Items in
+    no collection get a shelf too, which has no dot and no name to change. (The shelves are
+    put in another order on the rail.) */
 function shelf(collection, list) {
   const made = el('section', 'band');
   const head = el('div', 'band-head');
   if (collection) {
     made.dataset.id = collection.id;
-    const grip = el('span', 'band-grip');
-    grip.dataset.tip = 'Drag to reorder';
-    grip.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      e.preventDefault();
-      dragShelf(grip, e);
-    });
-    head.append(grip);
     const dot = el('button', 'band-dot');
     dot.type = 'button';
     dot.dataset.hue = collection.hue;
@@ -912,7 +1086,7 @@ function shelf(collection, list) {
     // The name is kept as it is typed, so nothing is lost if the page is redrawn meanwhile.
     let before = collection.name;
     name.addEventListener('focus', () => (before = collection.name));
-    name.addEventListener('input', () => ((collection.name = name.textContent.trim() || before), save())); // a name cannot be emptied
+    name.addEventListener('input', () => ((collection.name = name.textContent.trim() || before), save(), drawRailShelves())); // a name cannot be emptied (and the rail lists it)
     name.addEventListener('keydown', (e) => {
       if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         // From the keyboard: Option with an up or down arrow moves the shelf one place.
@@ -957,31 +1131,91 @@ function shelf(collection, list) {
   return made;
 }
 
-/** A new, empty collection in a colour not yet used, its name ready to be typed over. */
-function addCollection() {
+/** Making a collection: a dialog asks its name and its colour (to begin with, the first not
+    yet in use). Kept, it is there on the rail and on the page, last. */
+function openNewCollection() {
+  const form = el('form', 'modal details');
+  form.setAttribute('role', 'dialog');
+  form.setAttribute('aria-modal', 'true');
+  form.setAttribute('aria-labelledby', 'shelf-new-title');
+  const heading = el('h2', 'modal-title', 'New collection');
+  heading.id = 'shelf-new-title';
+  const head = el('div', 'modal-head');
+  head.append(heading);
+
+  const name = el('input', 'add-field details-field');
+  name.type = 'text';
+  name.placeholder = 'Name';
+  name.maxLength = 60;
+  name.spellcheck = false;
+  name.autocomplete = 'off';
+  const named = el('label', 'details-name', 'Name');
+  named.append(name);
+
   const used = new Set(collections.map((c) => c.hue));
   const free = HUES.findIndex((_, hue) => !used.has(hue));
-  collections.push({ id: 'c' + Date.now(), name: 'New collection', hue: free < 0 ? collections.length % HUES.length : free });
-  drawShelf();
-  const name = [...document.querySelectorAll('.band-name')].at(-1);
+  let chosen = free < 0 ? collections.length % HUES.length : free;
+  const colours = el('div', 'shelf-new-colours');
+  colours.setAttribute('role', 'group');
+  colours.setAttribute('aria-label', 'Colour');
+  const swatches = HUES.map((title, hue) => {
+    const swatch = el('button', 'swatch');
+    swatch.type = 'button';
+    swatch.dataset.hue = hue;
+    swatch.dataset.tip = title;
+    swatch.setAttribute('aria-label', title);
+    swatch.addEventListener('click', () => {
+      chosen = hue;
+      mark();
+    });
+    return swatch;
+  });
+  const mark = () => swatches.forEach((swatch, hue) => swatch.setAttribute('aria-pressed', String(hue === chosen)));
+  mark();
+  colours.append(...swatches);
+  const coloured = el('div', 'details-name', 'Colour');
+  coloured.append(colours);
+
+  const cancel = el('button', 'set-button', 'Cancel');
+  cancel.type = 'button';
+  cancel.addEventListener('click', closeDialog);
+  const keep = el('button', 'set-button filing-go', 'Create');
+  const able = () => (keep.disabled = !name.value.trim()); // a collection has a name
+  name.addEventListener('input', able);
+  able();
+  const foot = el('div', 'filing-foot');
+  foot.append(cancel, keep);
+  form.append(head, named, coloured, foot);
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const called = name.value.replace(/\s+/g, ' ').trim();
+    if (!called) return;
+    collections.push({ id: 'c' + Date.now(), name: called, hue: chosen });
+    closeDialog();
+    gliding(drawShelf); // (it is on the rail now, and on the page if the page shows them all)
+  });
+  openDialog(form, false);
   name.focus();
-  getSelection().selectAllChildren(name);
 }
 
 /** The Collections page: the tools, a shelf for each collection, one for what is in none,
     and the way to make another. */
 function shelves() {
   const list = shown(items, looks.collections);
+  // One collection by itself, if its name was chosen on the rail: its shelf, and nothing else.
+  const alone = collections.find((c) => c.id === shelfOnly);
+  if (alone) return [...(items.length ? [shelfTools(looks.collections)] : []), shelf(alone, list.filter((item) => item.collection === alone.id))];
   const loose = list.filter((item) => !collections.some((c) => c.id === item.collection));
+  // A collection is made on the rail, under the others. With none yet, the page says what
+  // one is and has the way to make the first, since the rail may be too narrow to show its own.
   const add = el('button', 'band-new', 'New collection');
   add.type = 'button';
-  add.addEventListener('click', addCollection);
+  add.addEventListener('click', openNewCollection);
   return [
     ...(items.length ? [shelfTools(looks.collections)] : []), // nothing to filter or sort in an empty library
     ...collections.map((c) => shelf(c, list.filter((item) => item.collection === c.id))),
     ...(loose.length ? [shelf(null, loose)] : []),
-    ...(collections.length ? [] : [el('p', 'band-none first', 'A collection gathers related items under one name and colour.')]),
-    add,
+    ...(collections.length ? [] : [el('p', 'band-none first', 'A collection gathers related items under one name and colour.'), add]),
   ];
 }
 
@@ -1693,18 +1927,30 @@ async function addArticle(address) {
     is also where the library is kept. */
 function drawShelf() {
   save();
+  drawRail(); // (the collections may have changed: the rail lists them, and marks the one shown by itself)
   // Home greets you in place of its name, with the week's reading beside the greeting.
   $('heading').textContent = tab.home ? greeting() : tab.name;
   if (!tab.shelves) filed = null; // (a sorting can be put back only while its page is the one shown)
   const beside = tab.home && items.length ? weekly() : tab.shelves && filed ? filedNote() : null;
   $('heading-side').replaceChildren(...(beside ? [beside] : []));
+  // Under Home's greeting, a line of how long you have read; under Finished, of how much has
+  // been (made when it is first wanted).
+  const line = tab.home && items.length ? readSoFar() : tab.dated ? finishedSoFar() : '';
+  let under = $('heading-under');
+  if (line && !under) {
+    under = el('p');
+    under.id = 'heading-under';
+    $('heading').after(under);
+  }
+  if (line) under.textContent = line;
+  else under?.remove();
   if (tab.home) return $('shelf-body').replaceChildren(...home());
   if (tab.shelves) return $('shelf-body').replaceChildren(...shelves());
   if (tab.settings) return $('shelf-body').replaceChildren(settings());
   if (!tab.tools) {
     const list = items.filter(tab.test);
-    if (tab.dated) list.sort((a, b) => when(b.finished) - when(a.finished)); // the latest finished first
-    return $('shelf-body').replaceChildren(list.length || !tab.empty ? grid(list, '', tab.dated) : el('p', 'band-none', tab.empty));
+    if (!list.length && tab.empty) return $('shelf-body').replaceChildren(begin(tab.empty)); // (a quotation, and what the page is for)
+    return $('shelf-body').replaceChildren(...(tab.dated ? finishedByMonth(list) : [grid(list)])); // Finished: month by month
   }
   // Library: everything, of the kinds chosen, in the order chosen.
   if (!items.length) return $('shelf-body').replaceChildren(begin());
@@ -1865,6 +2111,7 @@ async function readLights(mine) {
   const kept = await window.api.library.highlights(mine.item.file).catch(() => []);
   if (book !== mine) return;
   mine.lights = kept.filter((light) => light && typeof light.text === 'string' && Number.isInteger(light.section) && light.section >= 0 && light.section < mine.parts.length && Number.isInteger(light.start) && Number.isInteger(light.end));
+  keptLights.set(mine.item.id, mine.lights); // (Home shows one of them)
   relight();
 }
 
@@ -2111,6 +2358,7 @@ const NUMBER = /^[[(]?[\w*†‡§¶‖#]{1,6}[\])]?[.:]?$/; // a way back that 
 function closeNote() {
   if (!noter) return;
   noter.node.remove();
+  noter.shut?.(); // (a looked-up meaning still being asked for is called off: see lookUp)
   noter = null;
 }
 
@@ -3029,7 +3277,7 @@ function relight() {
   layNotes();
 }
 
-const keepLights = () => window.api.library.keepHighlights(book.item.file, book.item.title, book.lights);
+const keepLights = () => (keptLights.set(book.item.id, book.lights), window.api.library.keepHighlights(book.item.file, book.item.title, book.lights)); // (Home shows one of them)
 
 /** Where in a part's words a place on the page is: within a text node, or, at the edge of an
     element, where the next of the words after it starts. */
@@ -3105,7 +3353,8 @@ function lightAt(x, y) {
 }
 
 // The row of colours: a pill of them as a collection's are shown, then a line, then the way
-// to a note; and, for a highlight already made, the way to take it away.
+// to a note; for a few words, the way to look them up; and, for a highlight already made,
+// the way to take it away.
 let picker = null; // the row, when it is up
 
 function closePicker() {
@@ -3165,6 +3414,11 @@ function openPicker(range, place, light) {
     node.append(swatch);
   }
   node.append(el('span', 'picker-line'), tool('pen', light?.note ? 'Edit note' : 'Add a note', () => writeNote(made())));
+  // A word, a name or a short phrase can be looked up, where there is a model to ask.
+  const at = place ?? light;
+  if (lookable(at)) {
+    node.append(tool('look', 'Look up', () => lookUp(range, at)));
+  }
   // What is chosen can be asked about, in the chat beside the page.
   const ask = tool('', 'Ask about this', () => (getSelection().removeAllRanges(), askAbout((place ?? light).text)));
   const star = el('span', 'icon asterisk', '*'); // the chat's mark, as in the top bar
@@ -3213,9 +3467,10 @@ $('reading').addEventListener('scroll', closePicker, { passive: true });
 window.addEventListener('blur', closePicker);
 window.addEventListener('resize', closePicker);
 
-// The notes. Each is set in the margin level with the line its highlight starts on: on the
-// right; on the left if the one above on the right is in the way; and if both are, on
-// whichever side is free sooner, as high as it can go. Where the margins are too narrow for
+// The notes. Each is set in the margin level with the line its highlight starts on: in the
+// margin nearer to where the highlight begins (the left, if its first line lies in the left
+// half of the column; otherwise the right); in the other, if the note above is in the way
+// there; and if both are taken, on whichever side is free sooner, as high as it can go. Where the margins are too narrow for
 // writing, a note is a dot there, which opens when it is clicked.
 const asides = new Map(); // for each note on the page, its element
 let writing = null; // the highlight whose note is being written, and so is shown though it may be empty
@@ -3248,12 +3503,15 @@ function layNow() {
   const GAP = 22; // between the text and a note
   const EDGE = 16; // between a note and the window
   const LINE = 18; // a note's line
+  // A note stands in the margin nearer to where its highlight begins: the left one if the
+  // first line of it lies in the left half of the column, and otherwise the right.
+  const middle = (left + right) / 2;
   const placed = shown.map((light) => {
     const box = first(light);
-    return { light, y: box.top - frame.top + reading.scrollTop + (box.height - LINE) / 2 };
+    return { light, y: box.top - frame.top + reading.scrollTop + (box.height - LINE) / 2, near: box.left + box.width / 2 - frame.left < middle ? 'left' : 'right' };
   }).sort((a, b) => a.y - b.y);
   const ends = { right: -Infinity, left: -Infinity }; // how far down each margin is taken
-  for (const { light, y } of placed) {
+  for (const { light, y, near } of placed) {
     const room = Math.min(200, left - GAP - EDGE, reading.clientWidth - right - GAP - EDGE);
     const slim = room < 120;
     let node = asides.get(light);
@@ -3277,7 +3535,9 @@ function layNow() {
       continue;
     }
     node.style.width = room + 'px';
-    const side = y >= ends.right + 8 ? 'right' : y >= ends.left + 8 ? 'left' : ends.right <= ends.left ? 'right' : 'left';
+    // (Where that margin is taken at this height, the other; where both are, whichever is free sooner.)
+    const far = near === 'left' ? 'right' : 'left';
+    const side = y >= ends[near] + 8 ? near : y >= ends[far] + 8 ? far : ends[near] <= ends[far] ? near : far;
     const top = Math.max(y, ends[side] + 8);
     node.classList.toggle('left', side === 'left');
     node.style.left = (side === 'right' ? right + GAP : left - GAP - room) + 'px';
@@ -3333,6 +3593,84 @@ const shaped = new ResizeObserver(layNotes);
 shaped.observe($('page'));
 shaped.observe($('reading'));
 
+// ---------- looking up a word ----------
+// A word, a name or a short phrase that is selected (or highlighted) can be looked up: the
+// model in use is sent the words, the passage around them and what is being read, and says
+// what they mean there, in a sentence or three. What it says is shown under the words on a
+// small card, as a note of the book's own is, and is put away as one is: by a press
+// elsewhere, by Escape, or by scrolling.
+
+const MEANING = `Someone is reading, and has marked a word, a name or a short phrase to learn what it means where it stands. You are given what they are reading, the passage around the marked words, and the marked words.
+
+Say what the marked words mean in this passage, in one to three short, plain sentences (under fifty words in all):
+- for a word, its sense here, not its every sense;
+- for a name, who or what it is;
+- for words in another language, what they say.
+
+Do not begin by repeating the marked words, do not restate the passage, and use no lists or formatting. If it cannot be told, say so in one short sentence.`;
+
+const MOST_LOOKED = 5; // words: more is a passage, not something to look up
+
+/** The words of a stretch of the page ({ section, start, end }), each gap in them one space. */
+const wordsAt = (at) => linesOf(rootOf(at.section)).text.slice(at.start, at.end).replace(/\s+/g, ' ').trim();
+
+/** Whether a stretch of the page can be looked up: a few words, and a model to ask. */
+function lookable(at) {
+  if (!at) return false;
+  const words = wordsAt(at);
+  return Boolean(words) && words.length <= 80 && words.split(' ').length <= MOST_LOOKED && canAsk();
+}
+
+/** Asks the model in use what some words mean where they stand. Gives { text }, { error } or
+    { cancelled }. */
+async function askMeaning(key, item, around, words) {
+  const text = `Reading: ${item.title}${item.author ? ', by ' + item.author : ''}\n\nPassage:\n${around}\n\nMarked: ${words}`;
+  const said = await window.api.connections.once(key, { system: MEANING, text });
+  if (!said?.ok) return said?.cancelled ? { cancelled: true } : { error: said?.error || 'That did not work. Try again.' };
+  const plain = String(said.text ?? '').replace(/\*\*|__|`/g, '').replace(/\s+/g, ' ').trim().slice(0, 700);
+  return plain ? { text: plain } : { error: 'That did not work. Try again.' };
+}
+
+/** Looks up a stretch of the page, shown by `range`: the card goes up under its last line
+    (over its first if there is no room beneath), the words on it and the asterisk ticking
+    until what they mean is had. */
+function lookUp(range, at) {
+  closeNote();
+  const all = linesOf(rootOf(at.section)).text;
+  const words = wordsAt(at);
+  const around = all.slice(Math.max(0, at.start - 600), at.end + 600).replace(/\s+/g, ' ').trim();
+  const key = 'look' + Date.now();
+  const node = el('div', 'notepop lookup');
+  node.setAttribute('role', 'note');
+  const said = el('p', 'lookup-said');
+  said.setAttribute('aria-live', 'polite');
+  said.append(tick());
+  node.append(el('p', 'lookup-words', words), said);
+  document.body.append(node);
+  // (Which side it is on is settled once, for a card as tall as it is likely to get, so that
+  // it does not change sides when what was asked for arrives.)
+  const boxes = [...range.getClientRects()].filter((box) => box.width && box.height);
+  if (!boxes.length) return node.remove();
+  const first = boxes[0];
+  const last = boxes[boxes.length - 1];
+  const under = last.bottom + 8 + Math.max(node.getBoundingClientRect().height, 110) <= innerHeight - 12;
+  const set = () => {
+    const mine = node.getBoundingClientRect();
+    node.style.left = Math.max(12, Math.min((under ? last : first).left, innerWidth - mine.width - 12)) + 'px';
+    node.style.top = (under ? last.bottom + 8 : Math.max(12, first.top - mine.height - 8)) + 'px';
+  };
+  set();
+  let asking = true;
+  noter = { node, link: null, shut: () => asking && window.api.connections.cancel(key) };
+  askMeaning(key, book.item, around, words).then((answer) => {
+    asking = false;
+    if (noter?.node !== node || answer.cancelled) return;
+    said.textContent = answer.text ?? answer.error;
+    said.classList.toggle('wrong', !answer.text);
+    set();
+  });
+}
+
 // ---------- the list of highlights ----------
 // What is highlighted in what is open, listed in a panel hung from the top bar's highlights
 // button as find's is: each highlight's words beside a rule of its colour, its note under
@@ -3386,8 +3724,10 @@ async function openLights() {
   const rows = kept.map((light, index) => {
     const row = el('button', 'finder-row');
     row.type = 'button';
-    const quote = el('span', 'lights-quote', light.text.replace(/\s+/g, ' '));
-    quote.dataset.hue = light.hue;
+    const quote = el('span', 'lights-quote');
+    const words = el('span', 'lights-words', light.text.replace(/\s+/g, ' ')); // washed with its colour, as on the page
+    words.dataset.hue = light.hue;
+    quote.append(words);
     row.append(quote);
     if (light.note) row.append(el('span', 'lights-note', light.note));
     row.addEventListener('click', () => goLight(light));
@@ -3876,15 +4216,133 @@ function drawComing(answer) {
   });
 }
 
+// The prompts a new chat offers: the app's own, unless Settings has added to them or taken
+// some away. They are kept in the window's own storage, as how the text is set is.
+const OWN_PROMPTS = ['Explain this page', 'Summarise this chapter', 'Go over my highlights'];
+const PROMPTS_SHOWN = 4; // a chat shows the first few of them
+const PROMPT_LETTERS = 120; // the most a prompt runs to
+
+/** The prompts as they now stand. */
+function prompts() {
+  try {
+    const kept = JSON.parse(localStorage.getItem('prompts'));
+    if (Array.isArray(kept)) return kept.filter((ask) => typeof ask === 'string' && ask.trim()).map((ask) => ask.trim().slice(0, PROMPT_LETTERS));
+  } catch {
+    // not a list: the app's own
+  }
+  return OWN_PROMPTS;
+}
+
+/** Whether a list of prompts is the app's own, as it came. */
+const ownPrompts = (asks) => asks.length === OWN_PROMPTS.length && asks.every((ask, at) => ask === OWN_PROMPTS[at]);
+
+function keepPrompts(asks) {
+  if (ownPrompts(asks)) localStorage.removeItem('prompts');
+  else localStorage.setItem('prompts', JSON.stringify(asks));
+}
+
 /** What can be asked with a click, in a chat with nothing in it yet (where the model in use
-    can look at the book itself: otherwise it could answer none of them). */
+    can look at the book itself: otherwise it could answer none of them). Each is a prompt
+    kept in Settings, behind the one icon they all carry. They stand in the middle of the
+    chat, under the app's mark: the asterisk of its name. */
 function starters() {
   const made = el('div', 'chat-starts');
-  for (const ask of ['Explain this page', 'Summarise this chapter', book?.lights?.length ? 'Go over my highlights' : 'What should I know before reading this?']) {
-    const one = el('button', 'chat-start', ask);
+  const logo = el('div', 'chat-logo');
+  logo.setAttribute('aria-hidden', 'true');
+  logo.append(el('span', '', '*'));
+  made.append(logo);
+  for (const ask of prompts().slice(0, PROMPTS_SHOWN)) {
+    const one = el('button', 'chat-start');
     one.type = 'button';
+    const icon = el('span', 'chat-start-icon');
+    icon.setAttribute('aria-hidden', 'true');
+    one.append(icon, ask);
     made.append(one);
   }
+  return made;
+}
+
+/** The Prompts list in Settings: the prompts as they stand in a chat, each with a cross that
+    takes it away. A last button adds one: it turns into a field, where Return keeps what is
+    typed and leaves the field open for another. If the list is no longer as it came, a
+    second button puts it back. */
+function promptList() {
+  const made = el('div', 'set-prompts');
+  let adding = false;
+  const draw = (focus) => {
+    const asks = prompts();
+    const parts = asks.map((ask, at) => {
+      const chip = el('span', 'set-prompt');
+      const remove = el('button', 'set-prompt-x');
+      remove.type = 'button';
+      remove.setAttribute('aria-label', `Remove “${ask}”`);
+      remove.addEventListener('click', () => {
+        keepPrompts(asks.filter((_, other) => other !== at));
+        draw();
+      });
+      chip.append(el('span', 'set-prompt-name', ask), remove);
+      return chip;
+    });
+    if (adding) {
+      const field = el('input', 'set-prompt-field');
+      field.type = 'text';
+      field.placeholder = 'Add a prompt';
+      field.setAttribute('aria-label', 'Add a prompt');
+      field.maxLength = PROMPT_LETTERS;
+      field.spellcheck = false;
+      const keep = () => {
+        const typed = field.value.trim();
+        if (typed && !asks.some((ask) => ask.toLowerCase() === typed.toLowerCase())) keepPrompts([...asks, typed]);
+        return typed;
+      };
+      let kept = false; // (a redraw takes this field away: that is not a click elsewhere)
+      field.addEventListener('keydown', (e) => {
+        if (e.isComposing) return;
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (!keep()) return;
+          kept = true;
+          draw(true); // ready for the next one
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          kept = true;
+          adding = false;
+          draw();
+        }
+      });
+      // A click elsewhere keeps what was typed and closes the field.
+      field.addEventListener('blur', () => {
+        if (kept) return;
+        adding = false;
+        keep();
+        draw();
+      });
+      parts.push(field);
+    } else {
+      const more = (name, kind, run) => {
+        const one = el('button', 'set-prompt-more');
+        one.type = 'button';
+        one.dataset.more = kind;
+        const icon = el('span', 'icon');
+        icon.setAttribute('aria-hidden', 'true');
+        one.append(icon, name);
+        one.addEventListener('click', run);
+        return one;
+      };
+      parts.push(more('Add a prompt', 'add', () => {
+        adding = true;
+        draw(true);
+      }));
+      if (!ownPrompts(asks)) parts.push(more('Restore', 'restore', () => {
+        keepPrompts(OWN_PROMPTS);
+        draw();
+      }));
+    }
+    made.replaceChildren(...parts);
+    if (focus) made.querySelector('.set-prompt-field')?.focus();
+  };
+  draw();
   return made;
 }
 
@@ -3924,6 +4382,10 @@ function setQuote(text) {
 /** The panel's name for the chat, and whether an answer is on its way (the button that asks then stops it). */
 function drawChat() {
   $('chat-title').textContent = talk.title || 'New chat';
+  // The field says what can be asked about: the kind of thing the chat is about.
+  const asks = 'Ask about this ' + (talk.item?.kind === 'pdf' ? 'PDF' : talk.item?.kind ?? 'book');
+  $('chat-field').placeholder = asks;
+  $('chat-field').setAttribute('aria-label', asks);
   const busy = Boolean(talk.asking);
   $('chat-form').toggleAttribute('data-busy', busy);
   $('chat-send').setAttribute('aria-label', busy ? 'Stop' : 'Ask');
@@ -4889,7 +5351,7 @@ function settings() {
     row('Reasoning', reasoning, { more: () => (levels().length || !linked?.model ? '' : 'Not available for this model.') }),
   );
   const minds = el('section', 'set');
-  minds.append(el('h2', 'set-head', 'Intelligence'), sub('Connections'), connections, sub('Model'), models);
+  minds.append(el('h2', 'set-head', 'Intelligence'), sub('Connections'), connections, sub('Model'), models, sub('Prompts'), promptList());
   relink(true); // (this Mac is looked over for Claude Code each time the page is opened)
 
   // A few lines set as what you read is set, in the theme you read in.
@@ -4976,6 +5438,12 @@ for (const button of document.querySelectorAll('#rail [data-tab]')) {
   button.addEventListener('click', () => choose(button.dataset.tab));
 }
 
+$('rail-fold').addEventListener('click', () => {
+  shelvesFolded = !shelvesFolded;
+  localStorage.setItem('shelves', shelvesFolded ? 'folded' : 'open');
+  drawRail(); // (the list, and which of the tab and a name in it is marked)
+});
+
 $('rail-toggle').addEventListener('click', () => {
   wide = !wide;
   localStorage.setItem('rail', wide ? 'wide' : 'slim');
@@ -5024,12 +5492,13 @@ document.addEventListener('click', (e) => {
 });
 
 // The library arrives from the main process; then the first page can be drawn.
-(SAMPLING ? Promise.resolve(null) : window.api.library.load()).then((library) => {
+(SAMPLING ? Promise.resolve(null) : window.api.library.load()).then(async (library) => {
   if (library) {
     items = library.items;
     collections.push(...library.collections);
     spent = library.read ?? {};
     kept = JSON.stringify({ items, collections, read: spent });
+    await readMarked().catch(() => {}); // Home shows one of what is highlighted
   }
   drawRail();
   drawShelf();

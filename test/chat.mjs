@@ -56,6 +56,9 @@ try {
   await run(`relink().then(() => 0)`);
   show('0 in use, sees', [(await api(`connections.view()`)).model.name, await api(`chats.sees()`)]);
 
+  // (The starters are the app's own: a list of prompts left in the test profile by another run would change them.)
+  await run(`localStorage.removeItem('prompts')`);
+
   // 1. A database from the first layout is brought up, and its chat shows as it was kept, written out.
   await openItem('pdf');
   show('1 older database', { version: sql('PRAGMA user_version'), columns: sql(`SELECT group_concat(name) FROM pragma_table_info('messages')`), chat: sql(`SELECT summary || '|' || summed FROM chats`) });

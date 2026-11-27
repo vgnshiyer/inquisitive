@@ -109,7 +109,7 @@
 /* The things that change colour quickly when pointed at would chase a paper and ink that are
    themselves changing, and trail behind them. While a theme gives way to another (app.js
    marks the root for as long as it takes) they keep step instead. */
-:root.theming :is(.tool, .tab, .card, .begin-add, .pill, .sort, .dot, .seg button, .band-grip, .band-dot, .swatch, .band-bin, .band-new) {
+:root.theming :is(.tool, .tab, .card, .begin-add, .pill, .sort, .dot, .seg button, .band-dot, .swatch, .band-bin, .band-new) {
   transition: none !important;
 }
 
@@ -425,14 +425,208 @@ body[data-rail='wide'] .tab-name {
   opacity: 1;
 }
 
-.tab:not(:disabled):not([aria-current='true']):hover {
+.tab:not(:disabled):hover {
   background: var(--hover);
   color: var(--ink);
 }
 
-/* The tab you are in: its icon is the filled one. */
+/* The Collections tab and, wide, the arrow at its end that folds away the list under it. */
+.tab-fold {
+  position: relative;
+  display: flex;
+  flex: none;
+  flex-direction: column;
+}
+
+#rail-fold {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--slide), visibility 0s 0.22s, color 0.12s ease;
+}
+
+#rail-fold:hover {
+  color: var(--ink);
+}
+
+#rail-fold .icon {
+  width: 16px;
+  height: 16px;
+  mask-image: url(icons/alt-arrow-down-linear.svg);
+  transition: transform 0.16s ease;
+}
+
+#rail-fold[aria-expanded='false'] .icon {
+  transform: rotate(-90deg);
+}
+
+/* The collections, under their tab: each its colour and its name, set in from the tabs. One
+   is gone to by a click and moved among the others by dragging it: pointed at, it shows a
+   grip before its colour, the sign of that (and over the grip the pointer is a hand). A
+   long list is scrolled within the rail, so that what is at the foot keeps its place. */
+#rail-shelves {
+  display: flex;
+  flex: 0 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--slide), visibility 0s 0.22s;
+}
+
+#rail-shelves[hidden],
+#rail-fold[hidden] {
+  display: none;
+}
+
+body[data-rail='wide'] #rail-shelves,
+body[data-rail='wide'] #rail-fold {
+  opacity: 1;
+  visibility: inherit; /* (as the rail is: out of sight with it while something is read) */
+  transition: opacity var(--slide), visibility 0s, color 0.12s ease;
+}
+
+.rail-shelf {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 9px;
+  height: 30px;
+  padding: 0 10px 0 26px; /* set in a little: its name starts just past where the tabs' names do */
+  overflow: hidden;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--soft);
+  text-align: left;
+  white-space: nowrap;
+  touch-action: none;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.rail-shelf-grip {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  color: var(--muted);
+  opacity: 0;
+  cursor: grab;
+  transition: opacity 0.12s ease, color 0.12s ease;
+}
+
+.rail-shelf-grip::before {
+  content: '';
+  width: 16px;
+  height: 16px;
+  background: currentColor;
+  -webkit-mask: url(icons/grip-vertical-bold.svg) center / contain no-repeat;
+  mask: url(icons/grip-vertical-bold.svg) center / contain no-repeat;
+}
+
+.rail-shelf:hover .rail-shelf-grip,
+.rail-shelf.ghost .rail-shelf-grip {
+  opacity: 1;
+}
+
+.rail-shelf-grip:hover,
+.rail-shelf.ghost .rail-shelf-grip {
+  color: var(--ink);
+}
+
+/* (While one is carried, only the copy that goes with the pointer shows its grip.) */
+body.dragging .rail-shelf:not(.ghost) .rail-shelf-grip {
+  opacity: 0;
+}
+
+/* Pointed at, its name darkens (it takes no ground, as a tab does). */
+.rail-shelf:hover {
+  color: var(--ink);
+}
+
+/* The one shown by itself on the page: marked as the tab you are in is. */
+.rail-shelf[aria-current='true'] {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+.rail-shelf-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--hue);
+}
+
+.rail-shelf-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Under the collections, the way to make another: a plus where their colours are. */
+.rail-shelf-new {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px 0 23px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: var(--muted);
+  text-align: left;
+  white-space: nowrap;
+  transition: color 0.12s ease;
+}
+
+.rail-shelf-new:hover {
+  color: var(--ink);
+}
+
+.rail-shelf-new .icon {
+  width: 16px;
+  height: 16px;
+  mask-image: url(icons/add-circle-linear.svg);
+}
+
+/* In the dialog that makes a collection: the colours it can take, in a row. */
+.shelf-new-colours {
+  display: flex;
+  gap: 11px;
+  margin-top: 10px;
+  padding: 3px;
+}
+
+.rail-shelf:focus-visible,
+.rail-shelf-new:focus-visible,
+#rail-fold:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+  outline-offset: -2px;
+}
+
+/* The tab you are in: its icon is the filled one, and its name is darker and heavier. (It
+   has no ground of its own: only what is pointed at has.) */
 .tab[aria-current='true'] {
-  background: var(--press);
   color: var(--ink);
   font-weight: 500;
 }
@@ -463,6 +657,50 @@ body[data-rail='wide'] .tab-name {
 
 .tab.foot {
   margin-top: auto;
+}
+
+/* Over Settings, while the rail is wide: the app's name as its logo has it (opening.css),
+   quiet, its left edge on the icons' own. It is always there, in a row as tall as a tab;
+   slim, the rail is too narrow for it, and it fades in as the rail slides open, as the
+   tabs' names do. */
+#rail-mark {
+  display: flex;
+  flex: none;
+  align-items: center;
+  height: 36px;
+  margin-top: auto;
+  padding: 0 7px;
+  overflow: hidden;
+  color: var(--muted);
+  font: 400 19px / 1 'Fraunces Logo', var(--font-title);
+  font-optical-sizing: none;
+  font-variation-settings: 'opsz' 144, 'SOFT' 100, 'WONK' 0;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity var(--slide);
+}
+
+body[data-rail='wide'] #rail-mark {
+  opacity: 1;
+}
+
+#rail-mark > span {
+  position: relative;
+  top: -0.12em; /* the middle of its small letters on the middle of its row */
+}
+
+#rail-mark .star {
+  display: inline-block;
+  position: relative;
+  top: -0.12em;
+  margin-left: 0.04em;
+  font-size: 0.62em;
+  font-weight: 700;
+  vertical-align: top;
+}
+
+#rail-mark + .tab.foot {
+  margin-top: 0; /* (the room above is the name's to push against) */
 }
 
 /* The assistant's icon is the app's own mark, the asterisk of its name: a letter, not a
@@ -518,30 +756,43 @@ body > main[hidden] {
   padding: 14px 40px 72px;
 }
 
+/* The page's heading; under it, on Home, a line of how long you have read; and at the right,
+   level with the foot of them, whatever stands beside the heading. */
 #shelf-head {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  column-gap: 24px;
   margin: 0 0 24px;
 }
 
 #heading {
+  grid-column: 1;
   min-width: 0;
   margin: 0;
   font: var(--title-weight) var(--h1-size) / 1.1 var(--font-title);
   letter-spacing: -0.015em;
 }
 
-/* Beside Home's heading: how long you have read this week, and before it a bar for each of
-   the week's days, as tall as that day's share of the longest. A day with nothing read is a
-   dot on the line; a day still to come is fainter. */
+#heading-under {
+  grid-column: 1;
+  grid-row: 2;
+  margin: 8px 0 0;
+  color: var(--soft);
+}
+
+#heading-side {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+/* Beside Home's heading: a bar for each of the week's days, as tall as that day's share of
+   the longest. A day with nothing read is a dot on the line; a day still to come is fainter. */
 .week {
   display: flex;
   flex: none;
   align-items: flex-end;
-  gap: 14px;
-  padding-bottom: 5px; /* its words onto the heading's own line of type */
+  padding-bottom: 3px; /* its bars onto the line of type under the greeting */
 }
 
 .week-bars {
@@ -572,23 +823,6 @@ body > main[hidden] {
 
 .week-bars .ahead i {
   background: var(--line);
-}
-
-.week-words {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  line-height: 1.25;
-}
-
-.week-name {
-  color: var(--muted);
-  font-size: calc(var(--text-size) - 2px);
-}
-
-.week-time {
-  font-weight: 500;
-  white-space: nowrap;
 }
 
 .cards {
@@ -786,49 +1020,62 @@ body > main[hidden] {
   background: var(--line);
 }
 
-/* The lead card, on Home: the thing to carry on with, across the page. The same parts as any
-   card, larger. */
-.card.lead {
-  width: 100%;
-  min-height: 196px;
-  aspect-ratio: auto;
-  padding: calc(var(--card-pad) + 4px) calc(var(--card-pad) + 8px) calc(var(--card-pad) + 2px);
+/* One of your highlights, on Home: the words, washed with their colour as they are on the
+   page (.lights-words); a note written on them; and what they are from, with an arrow. The
+   whole of it is a button: it opens the book there. */
+.recall {
+  display: block;
+  max-width: 720px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
 }
 
-/* Kind and length sit together at the left here; set apart, they would be a page-width away. */
-.card.lead .card-head {
-  justify-content: flex-start;
-  gap: 6px;
-  margin-bottom: 12px;
-  font-size: var(--text-size);
+.recall:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+  outline-offset: 6px;
 }
 
-.card.lead .card-head span + span::before {
-  content: '·';
-  margin-right: 6px; /* as far from the dot as the gap before it */
+.recall-quote {
+  display: block;
+  font: 400 20px / 1.6 var(--font-title);
 }
 
-.card.lead .card-title {
-  margin-bottom: 8px;
-  font-size: calc(var(--title-size) * 1.5);
-  line-height: 1.15;
+.recall-note {
+  display: -webkit-box;
+  margin-top: 10px;
+  overflow: hidden;
+  color: var(--soft);
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
 
-.card.lead .card-author {
-  margin-bottom: 20px;
-  font-size: calc(var(--text-size) + 1px);
+.recall-from {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 1px);
+  transition: color 0.16s ease;
 }
 
-/* Under Continue: the lead card, then a row of the next few as short cards. However many
-   there are, they share the row's width. */
-.going {
-  display: grid;
-  gap: var(--card-gap);
+.recall-go {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  background: currentColor;
+  -webkit-mask: url(icons/arrow-right-up-linear.svg) center / contain no-repeat;
+  mask: url(icons/arrow-right-up-linear.svg) center / contain no-repeat;
 }
 
-.cards.row {
-  grid-template-columns: repeat(auto-fit, minmax(var(--card-min), 1fr));
+.recall:hover .recall-from,
+.recall:focus-visible .recall-from {
+  color: var(--ink);
 }
 
 /* A short card: the same parts as any card, without the height. */
@@ -1520,8 +1767,8 @@ body > main[hidden] {
   font-size: calc(var(--text-size) - 1px);
 }
 
-/* The list of highlights: find's panel without the field. Each is its words beside a rule
-   of its colour, two lines of them at most, and its note under them. */
+/* The list of highlights: find's panel without the field. Each is its words, washed with its
+   colour as they are on the page, two lines of them at most, and its note under them. */
 .lights:focus {
   outline: none;
 }
@@ -1543,9 +1790,13 @@ body > main[hidden] {
 }
 
 .lights-quote {
-  padding-left: 8px;
-  border-left: 2px solid var(--hue);
   color: var(--ink);
+}
+
+.lights-words {
+  background: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue)) var(--wash), transparent);
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .lights-note {
@@ -1669,6 +1920,103 @@ body > main[hidden] {
   color: var(--soft);
   font-size: calc(var(--text-size) - 1px);
   font-weight: 500;
+}
+
+/* Settings: the prompts a new chat offers, drawn as they stand there (.chat-start), each with
+   a cross that takes it away; then the button that adds one (it turns into a field), and,
+   once the list is not as it came, the one that puts it back. */
+.set-prompts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 0 8px;
+}
+
+.set-prompt,
+.set-prompt-more,
+.set-prompt-field {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: transparent;
+  color: var(--soft);
+}
+
+.set-prompt {
+  gap: 4px;
+  padding: 0 5px 0 12px;
+}
+
+.set-prompt-x {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.set-prompt-x::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  background: currentColor;
+  -webkit-mask: url(icons/close-linear.svg) center / contain no-repeat;
+  mask: url(icons/close-linear.svg) center / contain no-repeat;
+}
+
+.set-prompt-x:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.set-prompt-more {
+  gap: 6px;
+  padding: 0 13px 0 9px;
+  color: var(--muted);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.set-prompt-more:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.set-prompt-more .icon {
+  width: 16px;
+  height: 16px;
+}
+
+.set-prompt-more[data-more='add'] .icon { mask-image: url(icons/add-circle-linear.svg); }
+.set-prompt-more[data-more='restore'] .icon { mask-image: url(icons/restart-linear.svg); }
+
+.set-prompt-field {
+  width: 240px;
+  padding: 0 12px;
+  outline: 0;
+  color: var(--ink);
+  font: inherit;
+}
+
+.set-prompt-field::placeholder {
+  color: var(--muted);
+}
+
+.set-prompt-field:focus {
+  border-color: color-mix(in srgb, var(--ink) 45%, transparent);
+}
+
+.set-prompt-x:focus-visible,
+.set-prompt-more:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+  outline-offset: 2px;
 }
 
 /* Where a connection stands, before its button. */
@@ -2149,49 +2497,8 @@ body > main[hidden] {
   box-shadow: inset 0 0 0 1px var(--muted);
 }
 
-/* A shelf's grip: in the margin beside its line, shown when the line is pointed at. Dragging
-   it moves the shelf among the others. */
-.band-head {
-  position: relative;
-}
-
-.band-grip {
-  position: absolute;
-  top: 50%;
-  left: -30px; /* reaching the line's own edge, so the pointer can cross to it */
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 28px;
-  margin-top: -14px;
-  color: var(--muted);
-  opacity: 0;
-  cursor: grab;
-  touch-action: none;
-  transition: opacity 0.12s ease, color 0.12s ease;
-}
-
-.band-grip::before {
-  content: '';
-  width: 18px;
-  height: 18px;
-  background: currentColor;
-  -webkit-mask: url(icons/grip-vertical-bold.svg) center / contain no-repeat;
-  mask: url(icons/grip-vertical-bold.svg) center / contain no-repeat;
-}
-
-.band-head:hover .band-grip,
-.band.ghost .band-grip {
-  opacity: 1;
-}
-
-.band-grip:hover,
-.band.ghost .band-grip {
-  color: var(--ink);
-}
-
-/* While a shelf or a card is being dragged: a copy of it goes with the pointer, and the
-   thing itself stays on the page, faded, wherever letting go would put it. */
+/* While a card, or a collection on the rail, is being dragged: a copy of it goes with the
+   pointer, and the thing itself stays where it is, faded, wherever letting go would put it. */
 body.dragging,
 body.dragging * {
   cursor: grabbing !important;
@@ -2360,6 +2667,8 @@ body.dragging * {
 .band-new:hover {
   background: var(--hover);
   color: var(--ink);
+}
+
 /* ---------- sorting into collections ---------- */
 /* At the end of the line of what is in no collection, after the rule: the way to have the
    model in use file it (app.js). A pill no taller than the line's bin, with the assistant's
@@ -2557,6 +2866,35 @@ label.filing-row {
   font-size: calc(var(--text-size) - 1px);
 }
 
+/* ---------- looking up a word ---------- */
+/* What some words mean, on a card as a book's own note is (.notepop): the words, then what
+   was said of them; until it is had, the app's asterisk, ticking. As wide from the start as
+   it will be, so that it does not grow when the answer comes. */
+.notepop.lookup {
+  width: min(320px, calc(100vw - 24px));
+}
+
+/* In the row of colours, the way to it: a question in a speech bubble. */
+.menu-icon[data-icon='look'] { mask-image: url(icons/chat-round-question-mark-bold.svg); }
+
+.lookup-words {
+  font-weight: 500;
+}
+
+.notepop .lookup-said {
+  margin-top: 3px;
+  color: var(--soft);
+}
+
+.notepop .lookup-said.wrong {
+  color: var(--muted);
+}
+
+.notepop .lookup-said .tick {
+  margin: 0;
+  font-size: 18px;
+}
+
 /* ---------- an item's details ---------- */
 /* The dialog that changes what an item is called and who it is by (app.js): a field for
    each, its name above it; beside the dialog's title, with a model in use, the way to have
@@ -2632,8 +2970,6 @@ label.filing-row {
 
 /* ---------- reading ---------- */
 /* One quiet column of text, from the top of the window to the foot of it. */
-}
-
 
 #reading {
   position: relative; /* the notes in its margins are placed from its corner, and scroll with it */
@@ -4014,23 +4350,58 @@ body.chat-sizing {
   background: var(--line);
 }
 
-/* In a chat with nothing in it yet, what can be asked with a click: at the foot, over the field. */
+/* In a chat with nothing in it yet: the app's mark, and under it what can be asked with a
+   click, each in the middle of the panel's width; the whole in the middle of its height. */
 .chat-starts {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
   gap: 6px;
-  margin-top: auto;
+  margin: auto 0;
+}
+
+/* The app's mark: the asterisk of its name, in the logo's face (opening.css). The letter
+   stands high in its line, so the box is made as tall as the asterisk itself and the letter
+   is drawn up into it: what is under the mark is then measured from the mark, not its line. */
+.chat-logo {
+  height: 0.514em;
+  margin-bottom: 14px;
+  color: var(--ink);
+  font: 700 64px / 1 'Fraunces Logo', var(--font-title);
+  font-optical-sizing: none;
+  font-variation-settings: 'opsz' 144, 'SOFT' 100, 'WONK' 0;
+  user-select: none;
+}
+
+.chat-logo > span {
+  display: block;
+  position: relative;
+  top: -0.0835em;
 }
 
 .chat-start {
-  padding: 7px 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  max-width: 100%;
+  padding: 7px 12px 7px 10px;
   border: 1px solid var(--line);
   border-radius: 14px;
   background: transparent;
   color: var(--soft);
   text-align: left;
   transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+/* The one icon every prompt carries: beside its first line. */
+.chat-start-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1.5px;
+  background: currentColor;
+  -webkit-mask: url(icons/chat-round-line-linear.svg) center / contain no-repeat;
+  mask: url(icons/chat-round-line-linear.svg) center / contain no-repeat;
 }
 
 .chat-start:hover {

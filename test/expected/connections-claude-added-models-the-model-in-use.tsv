@@ -74,5 +74,5 @@
 10 claude menu	["Reconnect","Disconnect"]
 10 rows	[["ChatGPT","Sign in to ask about what you read.",["Connect"]],["Claude","Claude subscription",["(Ready)","Connect"]],["Anthropic","Claude Opus 5.5, with your API key.",["[on]","…"]],["Another model",null,["Add"]],["Default model",null,["Claude Opus 5.5"]],["Reasoning","",["Default","Low","Medium","High"]]]
 10 kept	{"claude":false,"endpoints":1,"model":{"provider":"chatgpt","id":"gpt-6.1-sol","name":"GPT-6.1 Sol"}}
-10 parts	"[\"Library\",\"Text\",\"Reading\",\"Intelligence\",\"Connections\",\"Model\"]"
+10 parts	"[\"Library\",\"Text\",\"Reading\",\"Intelligence\",\"Connections\",\"Model\",\"Prompts\"]"
 logs	"[]"

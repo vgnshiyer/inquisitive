@@ -2,7 +2,7 @@
 1 older database	{"version":"2","columns":"id,chat,role,text,quote,state,model,at,looked","chat":"|0"}
 1 its chat	[["chat-asked","","An old question",[]],["chat-answer","","An old answer, kept before.",["copy:1","again:1"]]]
 1 written	"<p>An old <strong>answer</strong>, kept before.</p>\n"
-2 starters	"[\"Explain this page\",\"Summarise this chapter\",\"What should I know before reading this?\"]"
+2 starters	"[\"Explain this page\",\"Summarise this chapter\",\"Go over my highlights\"]"
 2 asked with a click	[["chat-asked","","Explain this page"],["chat-answer","","From Codex: Explain this page"]]
 3 made of	"{\"p\":3,\"strong\":1,\"em\":1,\"ol\":3,\"table\":[2,4],\"code\":1,\"quote\":1,\"links\":[[\"chat-place\",\"#section-3\",\"Chapter 2\"],[\"\",\"https://example.com/book\",\"the publisher\"]],\"wraps\":\"normal\"}"
 3 before going	1

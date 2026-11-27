@@ -12,7 +12,7 @@
 3 stopped	[["chat-asked",null,"SLOW one\nmore",null,false],["chat-answer",null,"w0 w1 w2 w3 w4 w5 w6 \n","Stopped",false]]
 3 state	{"open":true,"title":"What is this essay about?","busy":false,"send":"Ask","field":"","quote":null,"focus":"chat-field"}
 3 empty asks nothing	4
-4 the row	"[\"Add a note\",\"Ask about this\"]"
+4 the row	"[\"Add a note\",\"Look up\",\"Ask about this\"]"
 4 passage over the field	{"open":true,"title":"What is this essay about?","busy":false,"send":"Ask","field":"","quote":"Ada Example · 127.0.0.1","focus":"chat-field"}
 4 thread	[["chat-asked","Ada Example · 127.0.0.1","Why this?",null,false],["chat-answer",null,"Hello, world. You said: > Ada Example · 127.0.0.1\nWhy this?\n",null,false]]
 4 what went out	"[{\"type\":\"input_text\",\"text\":\"> Ada Example · 127.0.0.1\\n\\nWhy this?\"}]"
