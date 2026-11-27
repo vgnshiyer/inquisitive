@@ -3826,19 +3826,50 @@ try {
   // nothing kept, or nothing that can be read: the text is set as it comes
 }
 
+let worn = null; // the theme the window was last told to wear (none: the app's own colours)
+let fading = null; // one paper giving way to another, while it lasts
+
 /** The window wears the reader's theme while something is being read, and the app's own
-    colours otherwise. */
+    colours otherwise.
+
+    One paper gives way to another by degrees. It is done with a picture: the window as it
+    was is laid over the window as it now is, and fades away (style.css). The colours
+    themselves changing by degrees comes to the same thing on the screen, but has everything
+    in the window restyled and drawn afresh at every step, which a long chapter cannot keep
+    up with: its colours then changed in three or four jumps. */
 function wear() {
   const root = document.documentElement;
   const theme = open && THEMES.some(([id]) => id === setting.theme) ? setting.theme : null;
-  if (theme !== (root.dataset.theme ?? null)) {
-    // The paper and ink now change by degrees (style.css); what has a quick fade of its own
-    // keeps step with them for as long as that takes.
+  if (theme !== worn) {
+    worn = theme;
+    // What has a quick fade of its own keeps step with the paper and ink for as long as
+    // the change takes.
     root.classList.add('theming');
     clearTimeout(theming);
     theming = setTimeout(() => root.classList.remove('theming'), 320);
-    if (theme) root.dataset.theme = theme;
-    else delete root.dataset.theme;
+    const change = () => {
+      if (theme) root.dataset.theme = theme;
+      else delete root.dataset.theme;
+    };
+    const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // (Not while a page is being turned, which is a picture of its own: then the colours
+    // change by degrees themselves, as they do where there are no such pictures.)
+    if (document.startViewTransition && !still && !leafing && document.visibilityState === 'visible') {
+      fading?.skipTransition();
+      root.dataset.fade = '';
+      const fade = (fading = document.startViewTransition(() => {
+        change();
+        turn();
+      }));
+      const done = () => {
+        if (fading !== fade) return;
+        fading = null;
+        delete root.dataset.fade;
+      };
+      fade.finished.then(done, done);
+      return;
+    }
+    change();
   }
   turn();
 }
@@ -4390,6 +4421,14 @@ function drawChat() {
   $('chat-send').setAttribute('aria-label', busy ? 'Stop' : 'Ask');
 }
 
+// A chat that is kept is shown from its end. The last few things said are drawn at once, and
+// what was said before them is added above, a few at a time, once the chat has slid in: a
+// long chat drawn whole takes long enough to hold up its own opening, which then comes in
+// starts.
+const CHAT_TAIL = 8; // how many messages are drawn at once
+const CHAT_MORE = 12; // and how many more at a time
+const CHAT_SLID = 300; // by when the chat has slid in (style.css: --slide, and a little)
+
 /** Shows a chat that is kept: everything said in it, at its end. */
 async function showChat(id) {
   const mine = talk;
@@ -4397,15 +4436,36 @@ async function showChat(id) {
   if (!kept || talk !== mine || mine.asking) return;
   mine.chat = kept.chat.id;
   mine.title = kept.chat.title;
-  const nodes = [];
-  for (const message of kept.messages) {
-    nodes.push(saying(message));
-    // (Where the part of a long chat that the model has only in summary ends.)
-    if (message.id === kept.chat.summed && message !== kept.messages.at(-1)) nodes.push(el('p', 'chat-divide', 'Earlier messages summarised'));
-  }
-  $('chat-thread').replaceChildren(...nodes);
+  const thread = $('chat-thread');
+  /** What is drawn for the messages from one place in the chat up to another. */
+  const drawn = (from, to) => {
+    const nodes = [];
+    for (const message of kept.messages.slice(from, to)) {
+      nodes.push(saying(message));
+      // (Where the part of a long chat that the model has only in summary ends.)
+      if (message.id === kept.chat.summed && message !== kept.messages.at(-1)) nodes.push(el('p', 'chat-divide', 'Earlier messages summarised'));
+    }
+    return nodes;
+  };
+  let from = Math.max(0, kept.messages.length - CHAT_TAIL);
+  thread.replaceChildren(...drawn(from));
   drawChat();
   toEnd();
+  // The rest goes in above, the thread staying where it is. It stops if the chat has been put
+  // away, or the thread now shows something else (its first thing is no longer what was put there).
+  let first = thread.firstElementChild;
+  let waited = false;
+  while (from > 0) {
+    await new Promise((go) => (waited ? requestIdleCallback(go, { timeout: 200 }) : setTimeout(go, CHAT_SLID)));
+    waited = true;
+    if (talk !== mine || thread.firstElementChild !== first) return;
+    const upTo = from;
+    from = Math.max(0, from - CHAT_MORE);
+    const fromEnd = thread.scrollHeight - thread.scrollTop;
+    thread.prepend(...drawn(from, upTo));
+    thread.scrollTop = thread.scrollHeight - fromEnd;
+    first = thread.firstElementChild;
+  }
 }
 
 /** Starts a chat afresh: nothing is kept of it until something is asked. */

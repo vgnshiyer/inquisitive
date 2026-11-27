@@ -40,6 +40,8 @@
          Widened, it shows each one's name beside its icon.
          The icons are Solar's (renderer/icons), placed by style.css. -->
     <nav id="rail" aria-label="Library">
+      <!-- The app's mark, over the tabs: slim, its asterisk; wide, its name as its logo has it. -->
+      <div id="rail-mark" aria-hidden="true"><span class="icon asterisk">*</span><span class="name">inquisitive<span class="star">*</span></span></div>
       <button class="tab" type="button" data-tab="home" aria-label="Home"><span class="icon" aria-hidden="true"></span><span class="tab-name">Home</span></button>
       <button class="tab" type="button" data-tab="library" aria-label="Library"><span class="icon" aria-hidden="true"></span><span class="tab-name">Library</span></button>
       <button class="tab" type="button" data-tab="finished" aria-label="Finished"><span class="icon" aria-hidden="true"></span><span class="tab-name">Finished</span></button>
@@ -50,8 +52,6 @@
         <button id="rail-fold" type="button" aria-controls="rail-shelves"><span class="icon" aria-hidden="true"></span></button>
       </div>
       <div id="rail-shelves"></div>
-      <!-- The app's name, shown while the rail is wide. -->
-      <div id="rail-mark" aria-hidden="true"><span>inquisitive<span class="star">*</span></span></div>
       <button class="tab foot" type="button" data-tab="settings" aria-label="Settings"><span class="icon" aria-hidden="true"></span><span class="tab-name">Settings</span></button>
     </nav>
 

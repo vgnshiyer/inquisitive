@@ -8,6 +8,9 @@
 @property --raised { syntax: '<color>'; inherits: true; initial-value: #fbf9f4; }
 @property --leaf-light { syntax: '<number>'; inherits: true; initial-value: 0.9; }
 @property --leaf-opacity { syntax: '<number>'; inherits: true; initial-value: 1; }
+/* And the light that falls on the window from above (see the body), which comes and goes by
+   degrees as a book is closed and opened. */
+@property --lit { syntax: '<color>'; inherits: true; initial-value: transparent; }
 /* The rail's width is a length in its own right for the same reason: the rail and the page
    beside it both read it as it changes, so they move as one. */
 @property --rail-width { syntax: '<length>'; inherits: true; initial-value: 56px; }
@@ -37,6 +40,7 @@
   --shadow: 0 10px 32px rgba(0, 0, 0, 0.14), 0 2px 6px rgba(0, 0, 0, 0.06); /* and what it casts */
   --shadow-small: 0 4px 14px rgba(0, 0, 0, 0.1); /* what a tip casts */
   --veil: rgba(64, 51, 42, 0.28); /* what dims the window behind a dialog: the ink, thinly */
+  --light: color-mix(in srgb, #fff 40%, transparent); /* the light from above, at the top of the window: on a light paper, white, thinly */
   --danger: #b8442f; /* for what removes something */
 
   /* Type: a serif for titles, a grotesk for everything else, a mono for numbers. */
@@ -90,6 +94,7 @@
     --shadow: 0 12px 36px rgba(0, 0, 0, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3);
     --shadow-small: 0 4px 16px rgba(0, 0, 0, 0.45);
     --veil: rgba(0, 0, 0, 0.5);
+    --light: color-mix(in srgb, var(--ink) 4%, transparent); /* on a dark paper, the ink, more thinly still */
     --danger: #e8907c;
     --tone: dark;
     color-scheme: dark;
@@ -151,15 +156,23 @@
 [data-theme='dark'] { --soft-mix: 66%; --muted-mix: 44%; --line-mix: 14%; --hover-mix: 6%; --press-mix: 9%; --wash: 42%; --hover-fill: initial; --press-fill: initial; }
 [data-theme='black'] { --soft-mix: 66%; --muted-mix: 50%; --line-mix: 17%; --hover-mix: 9.5%; --press-mix: 13%; --wash: 40%; --hover-fill: initial; --press-fill: initial; }
 
-/* The colours mixed from a paper and its ink, wherever either is given: at the root, and on
-   whatever wears a theme of its own. */
+/* The colours mixed from a paper and its ink, wherever either is given: at the root, on
+   whatever wears a theme of its own, and in the chat, whose paper is its own (below). */
 :root,
-[data-theme] {
+[data-theme],
+#chat-inner {
   --soft: color-mix(in srgb, var(--ink) var(--soft-mix), var(--paper));
   --muted: color-mix(in srgb, var(--ink) var(--muted-mix), var(--paper));
   --line: color-mix(in srgb, var(--ink) var(--line-mix), transparent); /* the one outline colour */
   --hover: var(--hover-fill, color-mix(in srgb, var(--ink) var(--hover-mix), transparent));
   --press: var(--press-fill, color-mix(in srgb, var(--ink) var(--press-mix), transparent));
+}
+
+/* The chat's paper: the page's, a step off it. (Given where the page's is, not in the chat,
+   which takes it for its own paper: there the two would each be made of the other.) */
+:root,
+[data-theme] {
+  --chat-paper: color-mix(in srgb, var(--ink) 5%, var(--paper));
 }
 
 /* How light a turned-over page's marks are: about the theme's ink. */
@@ -186,7 +199,12 @@ body {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: 44px minmax(0, 1fr);
-  background: var(--paper);
+  /* The window is lit from above: lightest at its top, and the paper's own colour from a
+     little past halfway down. The rail and the page stand on it alike. Not while something
+     is being read (below): a book's page is one even paper. */
+  --lit: var(--light);
+  background: linear-gradient(to bottom, var(--lit), transparent 60%) var(--paper);
+  transition: --lit var(--slide);
   color: var(--ink);
   font: 400 var(--text-size) / 1.4 var(--font);
   letter-spacing: -0.01em;
@@ -230,7 +248,9 @@ button:not(:disabled) {
   left: var(--rail-width);
   z-index: 1;
   height: 58px;
-  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  /* (the paper as it is at the top of the window, with the light on it: as much of the light
+     as there is of the paper, the rest of each being what shows through from beneath) */
+  background: linear-gradient(color-mix(in srgb, var(--lit) 82%, transparent), color-mix(in srgb, var(--lit) 82%, transparent)), color-mix(in srgb, var(--paper) 82%, transparent);
   -webkit-backdrop-filter: blur(12px);
   backdrop-filter: blur(12px);
   -webkit-mask-image: linear-gradient(to bottom, #000 36px, transparent);
@@ -382,6 +402,7 @@ body[data-rail='wide'] {
 
 body[data-screen='reading'] {
   --rail-width: 0px;
+  --lit: transparent;
 }
 
 /* While reading, the rail slides away, and slides back when you leave. */
@@ -659,34 +680,50 @@ body.dragging .rail-shelf:not(.ghost) .rail-shelf-grip {
   margin-top: auto;
 }
 
-/* Over Settings, while the rail is wide: the app's name as its logo has it (opening.css),
-   quiet, its left edge on the icons' own. It is always there, in a row as tall as a tab;
-   slim, the rail is too narrow for it, and it fades in as the rail slides open, as the
-   tabs' names do. */
+/* Over the tabs: the app's mark, in a row as tall as a tab and set a little apart from them.
+   Slim, it is the asterisk of its name, where a tab's icon would be; wide, the name as its
+   logo has it (opening.css), its left edge on the icons' own. Both are always there: as the
+   rail slides, the one goes before the other comes. */
 #rail-mark {
+  position: relative;
   display: flex;
   flex: none;
   align-items: center;
   height: 36px;
-  margin-top: auto;
+  margin: 4px 0 20px;
   padding: 0 7px;
   overflow: hidden;
-  color: var(--muted);
-  font: 400 19px / 1 'Fraunces Logo', var(--font-title);
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+#rail-mark .icon.asterisk {
+  transition: opacity 0.1s ease 0.12s;
+}
+
+#rail-mark .name {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 8px; /* its first stem on the icons' drawn edge */
+  display: flex;
+  align-items: center;
+  padding-bottom: 0.24em; /* the middle of its small letters on the middle of its row */
+  font: 400 21px / 1 'Fraunces Logo', var(--font-title);
   font-optical-sizing: none;
   font-variation-settings: 'opsz' 144, 'SOFT' 100, 'WONK' 0;
-  white-space: nowrap;
   opacity: 0;
-  transition: opacity var(--slide);
+  transition: opacity 0.1s ease;
 }
 
-body[data-rail='wide'] #rail-mark {
+body[data-rail='wide'] #rail-mark .icon.asterisk {
+  opacity: 0;
+  transition-delay: 0s;
+}
+
+body[data-rail='wide'] #rail-mark .name {
   opacity: 1;
-}
-
-#rail-mark > span {
-  position: relative;
-  top: -0.12em; /* the middle of its small letters on the middle of its row */
+  transition-delay: 0.12s;
 }
 
 #rail-mark .star {
@@ -699,8 +736,11 @@ body[data-rail='wide'] #rail-mark {
   vertical-align: top;
 }
 
-#rail-mark + .tab.foot {
-  margin-top: 0; /* (the room above is the name's to push against) */
+@media (prefers-reduced-motion: reduce) {
+  #rail-mark .icon.asterisk,
+  #rail-mark .name {
+    transition: none;
+  }
 }
 
 /* The assistant's icon is the app's own mark, the asterisk of its name: a letter, not a
@@ -3062,6 +3102,43 @@ body[data-screen='reading'] #mist {
   view-transition-name: mist;
 }
 
+/* One paper giving way to another (app.js marks the root for as long as it takes): the
+   window as it was, as a picture, fades away over the window as it now is, in the time and
+   at the pace the rail slides. The two are added together, so that halfway each colour is
+   halfway between what it was and what it is, as it would be if it had changed by degrees.
+   The colours themselves change at once, underneath; and nothing has a picture of its own,
+   as the bar, the mist and the sheet have for a turn of the page. */
+:root[data-fade] {
+  view-transition-name: root;
+  transition: none;
+}
+
+:root[data-fade] :is(#top, #mist, #reading, #page) {
+  view-transition-name: none;
+}
+
+:root[data-fade]::view-transition-old(root) {
+  animation: 0.22s cubic-bezier(0.3, 0, 0.2, 1) both paper-out;
+  mix-blend-mode: plus-lighter;
+}
+
+:root[data-fade]::view-transition-new(root) {
+  animation: 0.22s cubic-bezier(0.3, 0, 0.2, 1) both paper-in;
+  mix-blend-mode: plus-lighter;
+}
+
+@keyframes paper-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes paper-in {
+  from {
+    opacity: 0;
+  }
+}
+
 ::view-transition {
   pointer-events: none;
 }
@@ -3194,12 +3271,16 @@ body[data-screen='reading'] #mist {
   color: var(--ink);
 }
 
-/* What is highlighted is washed with its colour: one of five of the collections' colours. */
-#page ::highlight(light-0) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-0)) var(--wash), transparent); }
-#page ::highlight(light-1) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-1)) var(--wash), transparent); }
-#page ::highlight(light-2) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-2)) var(--wash), transparent); }
-#page ::highlight(light-3) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-3)) var(--wash), transparent); }
-#page ::highlight(light-5) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-5)) var(--wash), transparent); }
+/* What is highlighted is washed with its colour: one of five of the collections' colours.
+   The colours are given to the page itself, once, and everything on it has them from it
+   (a highlight's style is handed down like any other). Given to everything on the page
+   instead (`#page ::highlight`), each element works them out for itself whenever the window
+   is restyled: on a long chapter that made every restyle several times as long. */
+#page::highlight(light-0) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-0)) var(--wash), transparent); }
+#page::highlight(light-1) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-1)) var(--wash), transparent); }
+#page::highlight(light-2) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-2)) var(--wash), transparent); }
+#page::highlight(light-3) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-3)) var(--wash), transparent); }
+#page::highlight(light-5) { background-color: color-mix(in srgb, color-mix(in srgb, #000 var(--shade), var(--hue-5)) var(--wash), transparent); }
 
 /* A note on a highlight, in the margin beside it (app.js places it): small, in the app's own
    type, and on the left set against the text. Being written, it is in the ink. */
@@ -3392,16 +3473,16 @@ body[data-screen='reading'] #mist {
 /* What find has found is marked with the theme's ink too: each lightly, and the one gone to
    in full. (A PDF's words are a picture, which cannot change colour: there the one gone to
    is only washed more deeply.) */
-#page ::highlight(found) {
+#page::highlight(found) {
   background-color: color-mix(in srgb, var(--ink) 16%, transparent);
 }
 
-#page ::highlight(found-here) {
+#page::highlight(found-here) {
   background-color: var(--ink);
   color: var(--paper);
 }
 
-#page .words ::highlight(found-here) {
+#page .words::highlight(found-here) {
   background-color: color-mix(in srgb, var(--ink) 50%, transparent);
   color: transparent;
 }
@@ -3916,6 +3997,14 @@ body[data-chat] #chat {
   width: var(--chat-width);
   height: 100%;
   border-left: 1px solid var(--line);
+  /* It stands on a paper of its own, a step off the page's whatever the page's is, so that it
+     is told from the page and is still the quieter of the two. What is mixed from the paper
+     is mixed from this one here (above); and what is pointed at is the ink thinned, on every
+     paper, since the Light paper's own creams would be lost on it. */
+  --paper: var(--chat-paper);
+  --hover-fill: initial;
+  --press-fill: initial;
+  background: var(--paper);
 }
 
 /* As with a page and the top bar: the thread runs under the chat's head to the top of the
@@ -3948,6 +4037,24 @@ body[data-chat] #chat {
 
 #place {
   right: calc(var(--chat-now) + 10px);
+}
+
+/* What moves by degrees (the rail's width, the chat's, the light from above) is read by a
+   few things at the window's frame: the rail, the mist, the chat's column, the place in the
+   corner, the shelves' margin. The large bodies read none of it: the page's words, the notes
+   in its margin, what the shelves hold, what is in the chat. They are told so here, each
+   given a value of its own that never changes, so that a step of a slide is not a restyling
+   of everything in the window (which, with a long chapter open, took longer than the slide). */
+#page,
+#margin,
+.shelf > *,
+#chat-inner > * {
+  --rail-width: 0px;
+  --chat-open: 0;
+  --chat-now: 0px;
+  --chat-wide: 0px;
+  --chat-width: 0px;
+  --lit: transparent;
 }
 
 /* Its left edge is taken hold of to make it wider or narrower: a strip a little wider than
@@ -4046,9 +4153,12 @@ body.chat-sizing {
   background: var(--hover);
 }
 
+/* What is asked and what is answered are read at length, beside a page set larger than the
+   app's own text: they stand a step above it. */
 .chat-asked p,
 .chat-words {
   margin: 0;
+  font-size: calc(var(--text-size) + 1px);
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
@@ -4169,7 +4279,7 @@ body.chat-sizing {
   display: block;
   overflow-x: auto;
   border-collapse: collapse;
-  font-size: calc(var(--text-size) - 1px);
+  font-size: var(--text-size); /* (a step below the answer's words) */
 }
 
 .chat-words :is(th, td) {
