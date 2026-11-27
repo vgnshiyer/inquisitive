@@ -4,6 +4,8 @@ const os = require('node:os');
 const path = require('node:path');
 const library = require('./library.js');
 const assistant = require('./assistant.js');
+const chats = require('./chats.js');
+const connections = require('./connections.js');
 
 // A test run can keep its window off the screen (INQUISITIVE_HEADLESS=1), so it does not get
 // in the way of whoever is at the Mac.
@@ -127,6 +129,7 @@ ipcMain.handle('settings:move', async (event, into) => {
     properties: ['openDirectory', 'createDirectory'],
   })).filePaths[0];
   if (!picked) return { none: true };
+  chats.close(); // (the chats are a file in it, let go of while it moves)
   const moved = library.move(picked);
   if (!moved.folder) return moved;
   // (Where a run was told where its library is, that holds for the next run too.)
@@ -158,6 +161,8 @@ app.whenReady().then(() => {
   if (process.platform === 'darwin' && !app.isPackaged) app.dock.setIcon(path.join(__dirname, 'assets', 'icon.png'));
   library.listen();
   assistant.listen();
+  connections.listen();
+  chats.listen();
   createWindow();
   app.on('activate', () => {
     if (!win) createWindow();

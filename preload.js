@@ -44,6 +44,56 @@ contextBridge.exposeInMainWorld('api', {
     pending: () => ipcRenderer.invoke('assistant:pending'),
   },
 
+  // The connections (connections.js): the other ways to a model (Claude through Claude Code,
+  // a model added by its address) and which model answers. Each gives back what Settings draws:
+  // { providers: [{ id, name, connected, enabled, models, … }], presets, model: { provider, id, name }, effort, levels }.
+  connections: {
+    /** What is connected; with `quick`, from what is already known, at once. */
+    view: (quick) => ipcRenderer.invoke('connections:view', quick),
+    /** Look over this Mac for Claude Code (installed, version, signedIn), then what is connected. */
+    look: () => ipcRenderer.invoke('connections:look'),
+    /** Sign in to Claude with Claude Code's own sign-in, in the browser: { ok }, { ok: false, error } or { cancelled }. */
+    signIn: (key) => ipcRenderer.invoke('connections:sign-in', key),
+    /** Send Claude one short message; a reply makes it a connection: { ok, ms } or { ok: false, error }. */
+    connect: (key) => ipcRenderer.invoke('connections:connect', key),
+    /** The models an address lists: `draft` is { id, url, key, model }. Gives { ok, models } or { ok: false, error }. */
+    models: (key, draft) => ipcRenderer.invoke('connections:models', key, draft),
+    /** Add a model by its address, or change one, once it has answered: { ok, ms } or { ok: false, error }. */
+    save: (key, draft) => ipcRenderer.invoke('connections:save', key, draft),
+    /** Let a connection go. */
+    disconnect: (id) => ipcRenderer.invoke('connections:disconnect', id),
+    /** Use a held connection, or rest it. */
+    enable: (id, on) => ipcRenderer.invoke('connections:enable', id, Boolean(on)),
+    /** Choose the model questions go to. */
+    model: (provider, id) => ipcRenderer.invoke('connections:model', provider, id),
+    /** Choose how much the model thinks before it answers: 'low', 'medium', 'high', or null for as much as it does by itself. */
+    effort: (level) => ipcRenderer.invoke('connections:effort', level),
+    /** Ask the model in use one thing, apart from any chat (nothing of it is kept): `request` is { system, text }. Gives { ok: true, text, model }, { ok: false, error }, or { ok: false, cancelled: true } after `cancel(key)`. */
+    once: (key, request) => ipcRenderer.invoke('connections:once', String(key), request),
+    /** Call off a sign-in, a check, a listing or a one-off question that is under way, by its key. */
+    cancel: (key) => ipcRenderer.send('connections:cancel', String(key)),
+    /** Open the page Claude Code is to be had from. */
+    page: () => ipcRenderer.send('connections:page'),
+  },
+
+  // The chats (chats.js): what was asked about what you read, and answered, kept in the library.
+  chats: {
+    /** The chats about an item (its file), the one last added to first; all of them if none is named. */
+    list: (file) => ipcRenderer.invoke('chats:list', file),
+    /** A chat and everything said in it: { chat, messages }, or null. */
+    read: (id) => ipcRenderer.invoke('chats:read', id),
+    /** Ask in a chat, and keep the question and the answer: `request` is { chat, text, quote }, or { file, text, quote } to begin a new chat about an item. The model in use answers (connections). What happens comes to `onPart` under this id. */
+    ask: (id, request) => ipcRenderer.send('chats:ask', String(id), request),
+    /** Stop an answer that is coming: what had come of it is kept. */
+    stop: (id) => ipcRenderer.send('chats:stop', String(id)),
+    /** Hear of what happens: (id, part), where part is { chat, question }, { delta }, { done, answer }, { stopped, answer } or { error, code, answer }. */
+    onPart: (hear) => ipcRenderer.on('chats:part', (event, id, part) => hear(id, part)),
+    /** Call a chat something else. */
+    rename: (id, title) => ipcRenderer.invoke('chats:rename', id, title),
+    /** Take a chat away. */
+    remove: (id) => ipcRenderer.invoke('chats:remove', id),
+  },
+
   // The library (library.js): what is kept, and the books themselves.
   library: {
     /** The items and collections kept. */

@@ -461,6 +461,9 @@ async function failure(response) {
 let listed = null; // the models last listed, and when
 
 /** The models your plan can be asked with: each its id and its name. */
+/** The reasoning levels a model says it takes (each a word, or an entry naming one): none if it does not say. */
+const levelsOf = (model) => (Array.isArray(model.supported_reasoning_levels) ? model.supported_reasoning_levels : []).map((level) => (typeof level === 'string' ? level : level?.effort)).filter((level) => typeof level === 'string');
+
 async function models() {
   if (listed && Date.now() - listed.when < 15 * 60 * 1000) return listed.models;
   const has = kept();
@@ -469,17 +472,17 @@ async function models() {
     let found = [];
     try {
       const answer = await fetch(CODEX.base + '/models?client_version=1.0.0', { headers: { Authorization: 'Bearer ' + (await access()), originator: WHO, ...(has.account ? { 'chatgpt-account-id': has.account } : {}) } });
-      if (answer.ok) found = ((await answer.json()).models ?? []).filter((model) => model.visibility === 'list' && model.supported_in_api !== false).map((model) => ({ id: model.slug, name: model.display_name || model.slug }));
+      if (answer.ok) found = ((await answer.json()).models ?? []).filter((model) => model.visibility === 'list' && model.supported_in_api !== false).map((model) => ({ id: model.slug, name: model.display_name || model.slug, levels: levelsOf(model) }));
     } catch (error) {
       if (error instanceof SignedOut) throw error;
     }
-    listed = { when: Date.now(), models: found.length ? found : CODEX.models.map((id) => ({ id, name: id })), guessed: !found.length };
+    listed = { when: Date.now(), models: found.length ? found : CODEX.models.map((id) => ({ id, name: id, levels: [] })), guessed: !found.length };
     return listed.models;
   }
   const answer = await fetch(RESOURCE + '/models', { headers: { Authorization: 'Bearer ' + (await access()) } });
   if (!answer.ok) throw Object.assign(new Error((await failure(answer)).error), { status: answer.status });
   const { models: all = [] } = await answer.json();
-  const usable = all.filter((model) => model.visibility === 'list' && model.supported_in_api !== false).map((model) => ({ id: model.slug, name: model.display_name || model.slug }));
+  const usable = all.filter((model) => model.visibility === 'list' && model.supported_in_api !== false).map((model) => ({ id: model.slug, name: model.display_name || model.slug, levels: levelsOf(model) }));
   listed = { when: Date.now(), models: usable };
   return usable;
 }
@@ -490,8 +493,9 @@ const asking = new Map(); // the asks under way, by their id: each can be stoppe
     then { done, text } once it is whole, or { error, code } if it could not be had.
     `messages` is the whole conversation so far, oldest first, each { role: 'user' or
     'assistant', text }: nothing of it is kept on OpenAI's side between asks. `thread` names
-    the conversation, so that asks in it are served from the same place and cost less. */
-async function ask(id, { model, instructions, messages, thread }, tell) {
+    the conversation, so that asks in it are served from the same place and cost less.
+    `effort` is the reasoning level, for a model known to take one. */
+async function ask(id, { model, instructions, messages, thread, effort }, tell) {
   const stop = new AbortController();
   asking.set(id, stop);
   let text = '';
@@ -516,7 +520,7 @@ async function ask(id, { model, instructions, messages, thread }, tell) {
         ...(thread ? { 'session-id': String(thread), ...(codex ? {} : { 'thread-id': String(thread), 'x-client-request-id': String(thread) }) } : {}),
       },
       // (What both ways of signing in ask for: nothing stored, and the answer streamed.)
-      body: JSON.stringify({ model: chosen, ...(instructions || codex ? { instructions: String(instructions || BRIEF) } : {}), input, store: false, stream: true }),
+      body: JSON.stringify({ model: chosen, ...(instructions || codex ? { instructions: String(instructions || BRIEF) } : {}), input, ...(effort ? { reasoning: { effort: String(effort) } } : {}), store: false, stream: true }),
     });
     if (!answer.ok || !answer.body) return void tell(await failure(answer));
     // The answer comes as a stream of events, each a line naming it and a line of JSON.
@@ -566,6 +570,9 @@ async function ask(id, { model, instructions, messages, thread }, tell) {
   }
 }
 
+/** Stops an ask that is under way: it ends with what had come of it. */
+const stop = (id) => asking.get(String(id))?.abort();
+
 // ---------- what the window can ask for ----------
 
 function listen() {
@@ -578,11 +585,11 @@ function listen() {
     const tell = (part) => !event.sender.isDestroyed() && event.sender.send('assistant:part', id, part);
     ask(String(id), request ?? {}, tell);
   });
-  ipcMain.on('assistant:stop', (event, id) => asking.get(String(id))?.abort());
+  ipcMain.on('assistant:stop', (event, id) => stop(id));
   // Where you see and limit how much of your plan apps use: ChatGPT's own settings.
   ipcMain.on('assistant:usage', () => !headless && shell.openExternal(USAGE));
   // (A test run off-screen opens no browser: it is told where the browser would have gone.)
   if (headless) ipcMain.handle('assistant:pending', () => pending?.url ?? null);
 }
 
-module.exports = { listen };
+module.exports = { listen, ask, stop, status, models };

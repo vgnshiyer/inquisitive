@@ -1027,12 +1027,14 @@ function closeDialog() {
   dialog.node.remove();
   for (const part of dialog.behind) part.inert = false;
   dialog.from?.focus();
+  const { shut } = dialog;
   dialog = null;
+  shut?.();
 }
 
 /** Puts a dialog up: in the middle of the window, or, if it will grow as it is used, high in
-    it, so that its top stays where it is. */
-function openDialog(inside, high) {
+    it, so that its top stays where it is. `shut` is called when it closes, however it does. */
+function openDialog(inside, high, shut) {
   closeMenu();
   closePanel();
   closeDialog();
@@ -1045,7 +1047,7 @@ function openDialog(inside, high) {
   const from = document.activeElement === document.body ? null : document.activeElement;
   for (const part of behind) part.inert = true;
   document.body.append(node);
-  dialog = { node, behind, from };
+  dialog = { node, behind, from, shut };
 }
 
 // Add: in the dialog a field for a link, to save an article from the web, and under that a
@@ -3259,6 +3261,272 @@ window.api.assistant.status().then((now) => {
   if (tab.settings && !open) settled?.();
 });
 let settled = null; // brings the page's controls into line with what is chosen, while it is the page shown
+
+// ---------- the ways to a model ----------
+// Beside ChatGPT there is Claude, through Claude Code on this Mac, and any model added by its
+// address (connections.js). `linked` is what is connected and the model in use, as last told:
+// { providers, presets, model }. What is already known is fetched as the app starts (nothing
+// is run or asked for it), so Settings has its rows the moment it is opened.
+let linked = null;
+window.api.connections.view(true).then((now) => {
+  linked ??= now;
+  if (tab.settings && !open) settled?.();
+});
+
+/** Takes what is now connected, and brings Settings into line with it. */
+function relinked(now) {
+  linked = now;
+  if (tab.settings && !open) settled?.();
+  return now;
+}
+/** Asks again what is connected; with `look`, this Mac is looked over for Claude Code first. */
+const relink = (look) => window.api.connections[look ? 'look' : 'view']().then(relinked);
+
+/** A button as Settings has them: a pill (or, as `fill`, the one that goes ahead). */
+function pill(name, run, className = 'set-button') {
+  const made = el('button', className, name);
+  made.type = 'button';
+  made.addEventListener('click', run);
+  return made;
+}
+
+/** A dialog that connects a model: its title, a line under it, a body to fill and a foot for
+    its buttons. Closing it, however that is done, calls `shut`. */
+function mindDialog(name, line, shut) {
+  const form = el('form', 'modal mind');
+  form.setAttribute('role', 'dialog');
+  form.setAttribute('aria-modal', 'true');
+  form.setAttribute('aria-labelledby', 'mind-title');
+  const title = el('h2', 'modal-title', name);
+  title.id = 'mind-title';
+  const close = el('button', 'tool modal-close');
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Close');
+  close.append(el('span', 'icon'));
+  close.addEventListener('click', closeDialog);
+  const head = el('div', 'modal-head');
+  head.append(title, close);
+  const body = el('div', 'mind-body');
+  const foot = el('div', 'mind-foot');
+  form.append(head, el('p', 'modal-line', line), body, foot);
+  form.addEventListener('submit', (e) => e.preventDefault());
+  openDialog(form, true, shut);
+  return { body, foot, mine: dialog };
+}
+
+/** One step of connecting: a mark (a ring; the asterisk, ticking, while it is under way; a
+    tick once it is done), what it is, where it stands, and what can be done about it. */
+function step(state, name, said, ...actions) {
+  const made = el('div', 'mind-step ' + state);
+  const words = el('div', 'step-words');
+  words.append(el('div', 'step-name', name), el('div', 'step-said', said));
+  made.append(state === 'busy' ? tick() : el('span', 'step-mark'), words, ...actions.filter(Boolean));
+  return made;
+}
+
+/** Connects Claude, in a dialog: looks for Claude Code on this Mac, signs in if it is not
+    signed in (or if `again` asks for it, after a sign-in that turned out to have run out),
+    then sends one short message. A reply makes it a connection. Closing the dialog calls off
+    whichever wait is under way. */
+async function connectClaude(again = false) {
+  const run = { key: `connect-${Date.now()}`, phase: 'looking' };
+  const { body, foot, mine } = mindDialog('Connect Claude', 'Use your own Claude subscription, through Claude Code.', () => window.api.connections.cancel(run.key));
+  const live = () => dialog === mine;
+  const draw = (phase = run.phase, more) => {
+    Object.assign(run, { phase }, more);
+    const tool =
+      phase === 'looking'
+        ? step('busy', 'Claude Code', 'Looking for it on this Mac…')
+        : run.installed
+          ? step('done', 'Claude Code', run.version ? `Version ${run.version}` : 'Installed')
+          : step('todo', 'Claude Code', 'Not found on this Mac.', pill('Get Claude Code', () => window.api.connections.page()));
+    const account =
+      phase === 'signin'
+        ? step('busy', 'Account', 'Finish signing in on the page that opened in your browser.')
+        : phase === 'failed-signin'
+          ? step('failed', 'Account', run.error, pill('Try again', () => connectClaude(true)))
+          : run.signedIn
+            ? step('done', 'Account', 'Signed in.', phase === 'failed-check' && pill('Sign in again', () => connectClaude(true)))
+            : step('todo', 'Account', 'Sign in with your Claude account.');
+    const connection =
+      phase === 'checking'
+        ? step('busy', 'Connection', 'Waiting for a reply…')
+        : phase === 'failed-check'
+          ? step('failed', 'Connection', run.error, pill('Try again', () => connectClaude()))
+          : phase === 'done'
+            ? step('done', 'Connection', `Claude replied in ${(run.ms / 1000).toFixed(1)} s.`)
+            : step('todo', 'Connection', 'One short message, to check it answers.');
+    body.replaceChildren(tool, account, connection);
+    foot.replaceChildren(phase === 'done' ? pill('Done', closeDialog, 'fill') : pill('Cancel', closeDialog));
+  };
+  draw();
+
+  const found = (await relink(true)).providers.find((p) => p.id === 'claude');
+  if (!live()) return;
+  Object.assign(run, { installed: found.installed, version: found.version, signedIn: found.signedIn && !again });
+  if (!found.installed) return draw('install');
+  if (!run.signedIn) {
+    draw('signin');
+    const signed = await window.api.connections.signIn(run.key);
+    if (!live()) return;
+    if (!signed.ok) return draw('failed-signin', { error: signed.error });
+    run.signedIn = true;
+  }
+  draw('checking');
+  const reply = await window.api.connections.connect(run.key);
+  if (!live()) return;
+  draw(reply.ok ? 'done' : 'failed-check', { ms: reply.ms, error: reply.error });
+  relink(true); // (looked over again: it may have been signed in to just now)
+}
+
+const ON_THIS_MAC = /^(https?:\/\/)?(localhost|127\.|0\.0\.0\.0|\[::1\])/i;
+
+/** Adds a model by its address, in a dialog: an address (typed, or one of the ready-made
+    ones), an API key if the address wants one, and the model's name, with the models the
+    address lists offered under the field as it is typed. Connect sends one short message; a
+    reply adds the model. With `held`, a model already added is changed instead: its key
+    stays kept unless another is typed. */
+function addModel(held = null) {
+  const run = { key: `add-${Date.now()}`, id: held?.id, phase: 'form', models: [], listedFor: null, picked: -1 };
+  const { body, foot, mine } = mindDialog(held ? `Edit ${held.name}` : 'Add a model', 'With an API key, or running on this Mac.', () => {
+    window.api.connections.cancel(run.key);
+    window.api.connections.cancel(run.key + '-list');
+  });
+  const live = () => dialog === mine;
+
+  /** A field of the form: its name, then a box to type in. */
+  const field = (name, placeholder, type = 'text') => {
+    const made = el('label', 'field');
+    const input = el('input', 'add-field');
+    input.type = type;
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    input.placeholder = placeholder;
+    made.append(el('span', 'field-name', name), input);
+    return { made, input };
+  };
+  const presets = el('div', 'chips');
+  const address = field('Address', 'https://example.com/v1');
+  const key = field('API key', '', 'password');
+  const model = field('Model', 'Its name');
+  const list = el('div', 'mind-list');
+  const check = el('div', 'mind-check');
+  address.input.value = held?.url || '';
+  model.input.value = held?.model || '';
+  body.append(presets, address.made, key.made, model.made, list, check);
+
+  const go = pill('Connect', () => connect(), 'fill');
+  const draft = () => ({ id: run.id, url: address.input.value.trim(), key: key.input.value.trim(), model: model.input.value.trim() });
+  /** The key already kept counts for as long as the address is the one it was given for. */
+  const keyKept = () => Boolean(held?.hasKey) && draft().url.replace(/\/+$/, '') === held.url;
+
+  let shown = [];
+  const draw = () => {
+    const { url, model: typed } = draft();
+    key.input.placeholder = keyKept() ? 'Kept in the Keychain' : ON_THIS_MAC.test(url) ? 'Not needed on this Mac' : '';
+    const low = typed.toLowerCase();
+    const exact = run.models.some((m) => m.id.toLowerCase() === low);
+    shown = run.phase === 'done' || exact ? [] : run.models.filter((m) => !low || m.id.toLowerCase().includes(low) || m.name.toLowerCase().includes(low));
+    run.picked = Math.max(-1, Math.min(run.picked, shown.length - 1));
+    list.replaceChildren(
+      ...shown.map((m, k) => {
+        const item = el('button', 'menu-item' + (k === run.picked ? ' picked' : ''), m.id);
+        item.type = 'button';
+        item.tabIndex = -1;
+        item.addEventListener('click', () => pick(m));
+        return item;
+      })
+    );
+    list.hidden = !shown.length;
+    list.querySelector('.picked')?.scrollIntoView({ block: 'nearest' });
+
+    const { phase } = run;
+    check.replaceChildren(
+      phase === 'checking'
+        ? step('busy', 'Connection', 'Waiting for a reply…')
+        : phase === 'failed'
+          ? step('failed', 'Connection', run.error)
+          : phase === 'done'
+            ? step('done', 'Connection', `${run.asked} replied in ${(run.ms / 1000).toFixed(1)} s.`)
+            : step('todo', 'Connection', 'One short message, to check it answers.')
+    );
+    go.disabled = phase === 'checking' || !url || !typed; // nothing to connect without an address and a model
+    foot.replaceChildren(...(phase === 'done' ? [pill('Done', closeDialog, 'fill')] : [pill('Cancel', closeDialog), go]));
+  };
+  const pick = (m) => {
+    model.input.value = m.id;
+    run.picked = -1;
+    edited();
+    model.input.focus();
+  };
+  /** Anything typed after a check puts the check back to be done. */
+  const edited = () => {
+    if (run.phase !== 'checking') run.phase = 'form';
+    draw();
+  };
+
+  /** Asks the address for its models, once for each address and key. Quietly: an address
+      that will not say only leaves the model to be typed in full. */
+  const listModels = async () => {
+    const { url, key: typedKey } = draft();
+    const asked = `${url}\n${typedKey}`;
+    if (!url || run.listedFor === asked) return;
+    run.listedFor = asked;
+    window.api.connections.cancel(run.key + '-list');
+    const reply = await window.api.connections.models(run.key + '-list', draft());
+    if (!live() || run.listedFor !== asked || reply.cancelled) return;
+    run.models = reply.ok ? reply.models : [];
+    draw();
+  };
+
+  const connect = async () => {
+    if (go.disabled || run.phase === 'done') return;
+    const sent = draft();
+    Object.assign(run, { phase: 'checking', asked: sent.model, picked: -1 });
+    draw();
+    const reply = await window.api.connections.save(run.key, sent);
+    if (!live() || reply.cancelled) return;
+    Object.assign(run, { phase: reply.ok ? 'done' : 'failed', ms: reply.ms, error: reply.error });
+    draw();
+    if (reply.ok) relink();
+  };
+
+  presets.append(
+    ...(linked?.presets ?? []).map((preset) =>
+      pill(preset.name, () => {
+        if (address.input.value.trim() !== preset.url) model.input.value = ''; // another place, other models
+        address.input.value = preset.url;
+        run.models = [];
+        run.listedFor = null;
+        edited();
+        (ON_THIS_MAC.test(preset.url) || keyKept() ? model : key).input.focus();
+      }, 'chip')
+    )
+  );
+  list.addEventListener('mousedown', (e) => e.preventDefault()); // a click on a model leaves the field its caret
+  for (const { input } of [address, key, model]) {
+    input.addEventListener('input', () => {
+      if (input !== model.input) run.models = []; // they were another address's, or another key's
+      run.picked = -1;
+      edited();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (input === model.input && run.picked >= 0) pick(shown[run.picked]);
+        else connect();
+      } else if (input === model.input && shown.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        e.preventDefault();
+        run.picked = Math.max(-1, Math.min(run.picked + (e.key === 'ArrowDown' ? 1 : -1), shown.length - 1));
+        draw();
+      }
+    });
+  }
+  model.input.addEventListener('focus', listModels);
+  draw();
+  (held ? model : address).input.focus();
+}
 window.api.settings.load().then((told) => {
   about = told;
   if (tab.settings && !open) drawShelf();
@@ -3346,43 +3614,110 @@ function settings() {
   const places = el('div', 'set-buttons');
   places.append(reveal, mover);
 
-  // Intelligence: signed in with ChatGPT or not, and the buttons that go with each. (What
-  // comes of a sign-in is shown on whichever Settings page is up by then: `settled`.)
-  const chat = el('div', 'set-buttons');
-  const press = (name, run) => {
-    const made = el('button', 'set-button', name);
-    made.type = 'button';
-    made.addEventListener('click', run);
-    return made;
-  };
+  // Intelligence: the ways to a model, and the model that answers (assistant.js for ChatGPT,
+  // connections.js for the rest and for the choice). As in Storm: a connection not yet held
+  // has a Connect button; a held one a switch, to use it or rest it, and a menu to connect it
+  // again or let it go. Under them the default model, and how much it thinks.
   const refresh = () => tab.settings && !open && settled?.();
   const heard = (now) => {
     if (now.why) window.api.library.notify(now.why);
     helper = now.why || now.none ? { ...helper, waiting: false } : now;
     counted = null;
     refresh();
+    relink(); // (what is connected, and so the model in use, may have changed with it)
   };
   const begin = (way) => () => {
     helper = { ...helper, waiting: true };
     refresh();
     window.api.assistant.signIn(way).then(heard);
   };
+  const leave = () => window.api.assistant.signOut().then((now) => {
+    heard(now);
+    if (now.confirmed === false) window.api.library.notify('You are signed out here. ChatGPT did not confirm it, so to be sure, disconnect Inquisitive in ChatGPT’s settings, under Security and login.');
+  });
+  const drop = (id) => () => window.api.connections.disconnect(id).then(relinked);
+
+  /** Where Claude Code stands, in a word or two; nothing when it is held and well. */
+  const stateOf = (p) => (p.api || p.id === 'chatgpt' ? '' : p.installed === undefined ? (p.connected ? '' : 'Checking…') : !p.installed ? 'Not installed' : !p.signedIn ? 'Not signed in' : p.connected ? '' : 'Ready');
+  /** What a connection is, in a line. */
+  const said = (p) =>
+    p.id === 'chatgpt'
+      ? helper?.waiting
+        ? 'Finish signing in in your browser.'
+        : helper?.signedIn
+          ? [helper.way === 'codex' ? 'Signed in as Codex does' : 'Using your ChatGPT plan', helper.email, counted].filter(Boolean).join(' · ')
+          : 'Sign in to ask about what you read.'
+      : p.api
+        ? `${p.models[0]?.name || p.model}, ${p.local ? 'on this Mac' : p.hasKey ? 'with your API key' : `at ${p.host}`}.`
+        : `Your ${p.name} subscription, through ${p.tool}.`;
+  /** What the menu of a held connection offers. */
+  const more = (p) =>
+    p.id === 'chatgpt'
+      ? [...(helper?.way === 'codex' ? [] : [{ name: 'Manage usage', icon: 'usage', run: () => window.api.assistant.usage() }]), { name: 'Sign out', icon: 'leave', danger: true, run: leave }]
+      : [p.api ? { name: 'Edit', icon: 'pen', run: () => addModel(p) } : { name: 'Reconnect', icon: 'restart', run: () => connectClaude() }, { name: 'Disconnect', icon: 'leave', danger: true, run: drop(p.id) }];
+
+  const connections = el('div', 'set-rows');
+  let shape = null; // what the rows were last made from
+  let switches = []; // each brings one row's switch into line with whether its connection is on
   syncs.push(() => {
-    if (helper?.waiting) {
-      // Giving up is shown at once; the sign-in itself is told to stop behind it.
-      return chat.replaceChildren(press('Cancel', () => {
-        helper = { ...helper, waiting: false };
-        window.api.assistant.cancel();
-        refresh();
-      }));
+    if (!linked) return;
+    // (ChatGPT is as the sign-in says, which is known the moment it changes.)
+    const all = linked.providers.map((p) => (p.id === 'chatgpt' ? { ...p, connected: Boolean(helper?.signedIn) } : p));
+    // The rows are made afresh only when what they say changes: a switch that is pressed stays
+    // the same switch, and slides.
+    const now = JSON.stringify([all.map((p) => [p.id, p.connected, p.name, stateOf(p), said(p)]), Boolean(helper?.waiting), helper?.way]);
+    if (now !== shape) {
+      shape = now;
+      switches = [];
+      const plain = (name, line, ...controls) => {
+        const made = el('div', 'set-row');
+        const control = el('div', 'set-buttons');
+        control.append(...controls.filter(Boolean));
+        made.append(el('div', 'set-name', name), el('div', 'set-more', line), control);
+        return made;
+      };
+      connections.replaceChildren(
+        ...all.map((p) => {
+          if (p.id === 'chatgpt' && helper?.waiting) {
+            // Giving up is shown at once; the sign-in itself is told to stop behind it.
+            return plain(p.name, said(p), pill('Cancel', () => {
+              helper = { ...helper, waiting: false };
+              window.api.assistant.cancel();
+              refresh();
+            }));
+          }
+          const state = stateOf(p) && el('span', 'set-state', stateOf(p));
+          if (!p.connected) {
+            const connect = pill('Connect', () => (p.id === 'chatgpt' ? openMenu([{ name: 'Continue with ChatGPT', run: begin('plan') }, { name: 'Sign in with Codex', run: begin('codex') }], connect) : connectClaude()));
+            return plain(p.name, said(p), state, connect);
+          }
+          // Held: a switch to use it or rest it, and a menu to connect again or let it go.
+          const toggle = el('button', 'switch');
+          toggle.type = 'button';
+          toggle.setAttribute('role', 'switch');
+          toggle.setAttribute('aria-label', `Use ${p.name}`);
+          toggle.addEventListener('click', () => {
+            const on = toggle.getAttribute('aria-checked') !== 'true';
+            toggle.setAttribute('aria-checked', String(on)); // (at once; what follows from it comes with the answer)
+            window.api.connections.enable(p.id, on).then(relinked);
+          });
+          switches.push(() => toggle.setAttribute('aria-checked', String(Boolean(linked.providers.find((other) => other.id === p.id)?.enabled))));
+          const dots = el('button', 'set-button round');
+          dots.type = 'button';
+          dots.dataset.tip = 'More';
+          dots.setAttribute('aria-label', `More for ${p.name}`);
+          const mark = el('span', 'menu-icon');
+          mark.dataset.icon = 'dots';
+          dots.append(mark);
+          dots.addEventListener('click', () => openMenu(more(p), dots));
+          return plain(p.name, said(p), state, toggle, dots);
+        }),
+        plain('Another model', 'With an API key, or running on this Mac.', pill('Add', () => addModel())),
+      );
     }
-    if (!helper?.signedIn) return chat.replaceChildren(press('Continue with ChatGPT', begin('plan')), press('Sign in with Codex', begin('codex')));
-    chat.replaceChildren(...(helper.way === 'codex' ? [] : [press('Manage usage', () => window.api.assistant.usage())]), press('Sign out', () => window.api.assistant.signOut().then((now) => {
-      heard(now);
-      if (now.confirmed === false) window.api.library.notify('You are signed out here. ChatGPT did not confirm it, so to be sure, disconnect Inquisitive in ChatGPT’s settings, under Security and login.');
-    })));
-    // (Asking for the models is also the proof that the sign-in works.)
-    if (counted === null) {
+    switches.forEach((run) => run());
+    // (Asking ChatGPT for its models is also the proof that the sign-in works.)
+    if (helper?.signedIn && counted === null) {
       counted = '';
       window.api.assistant.models().then((had) => {
         counted = had.models ? `${had.models.length} ${had.models.length === 1 ? 'model' : 'models'}` : '';
@@ -3391,7 +3726,51 @@ function settings() {
       });
     }
   });
-  const using = () => (helper?.waiting ? 'Finish signing in in your browser.' : helper?.signedIn ? [helper.way === 'codex' ? 'Signed in as Codex does' : 'Using your ChatGPT plan', helper.email, counted].filter(Boolean).join(' · ') : 'Sign in to ask about what you read.');
+
+  // The default model: one of those the switched-on connections offer, under each one's name.
+  const offering = () => (linked?.providers ?? []).filter((p) => p.enabled && p.models.length);
+  const choose = el('button', 'set-button select');
+  choose.type = 'button';
+  const chosen = el('span');
+  const arrow = el('span', 'menu-icon');
+  arrow.dataset.icon = 'down';
+  choose.append(chosen, arrow);
+  choose.addEventListener('click', () => {
+    const entries = [];
+    let heading = null;
+    for (const p of offering()) {
+      if (p.name !== heading) entries.push((heading = p.name)); // (models added from the same place stand under one heading)
+      for (const m of p.models) entries.push({ name: m.name, on: linked.model?.provider === p.id && linked.model.id === m.id, run: () => window.api.connections.model(p.id, m.id).then(relinked) });
+    }
+    openMenu(entries, choose, true);
+  });
+  syncs.push(() => {
+    chosen.textContent = linked?.model?.name ?? 'No connection';
+    choose.disabled = !offering().length; // nothing to choose from without a connection, or until its models are listed
+  });
+  // Reasoning: how hard the model in use thinks. A level it does not take cannot be chosen; a
+  // model that takes none leaves the whole choice out of reach.
+  const levels = () => linked?.levels ?? [];
+  const reasoning = strip(
+    [[null, 'Default'], ['low', 'Low'], ['medium', 'Medium'], ['high', 'High']],
+    () => (levels().length ? (levels().includes(linked.effort) ? linked.effort : null) : undefined),
+    (level) => {
+      linked = { ...linked, effort: level }; // (at once; kept behind it)
+      window.api.connections.effort(level).then(relinked);
+    },
+    (button, [level]) => syncs.push(() => (button.disabled = !levels().length || (level !== null && !levels().includes(level)))),
+  );
+  reasoning.setAttribute('aria-label', 'Reasoning');
+
+  const sub = (name) => el('h3', 'set-sub', name);
+  const models = el('div', 'set-rows');
+  models.append(
+    row('Default model', choose, { more: 'Used whenever you ask about what you read.' }),
+    row('Reasoning', reasoning, { more: () => (levels().length || !linked?.model ? 'How much the model thinks before it answers.' : 'Not available for this model.') }),
+  );
+  const minds = el('section', 'set');
+  minds.append(el('h2', 'set-head', 'Intelligence'), sub('Connections'), connections, el('p', 'set-note', 'Inquisitive uses AI only when you ask. API keys stay in this Mac’s Keychain.'), sub('Model'), models);
+  relink(true); // (this Mac is looked over for Claude Code each time the page is opened)
 
   // A few lines set as what you read is set, in the theme you read in.
   const sample = el('div', 'set-sample');
@@ -3462,7 +3841,7 @@ function settings() {
       row('Books', text('reading', READINGS)),
       row('Articles', text('readingArticles', READINGS)),
     ),
-    part('Intelligence', '', null, row('ChatGPT', chat, { more: using })),
+    minds,
     foot,
   );
   sync();

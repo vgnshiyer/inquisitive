@@ -2,6 +2,7 @@
 // about them. Everything the app keeps goes through here.
 //
 //   <library>/library.json   the items, where you are in each, and the collections
+//   <library>/chats.db       what was asked about them, and answered (chats.js)
 //   <library>/Books/…        the books (EPUBs), copied in when they are added
 //   <library>/PDFs/…         the PDFs, likewise
 //   <library>/Articles/…     the articles saved from the web: a folder each, holding the
@@ -368,6 +369,10 @@ async function keep({ title, html, pictures }) {
 
 // ---------- what the window may ask ----------
 
+let gone = null; // who is told when an item is taken out of the library
+/** Has `hear` told of each item taken out of the library, by its file within it. */
+const discarded = (hear) => (gone = hear);
+
 function listen() {
   ipcMain.handle('library:load', () => load());
   ipcMain.on('library:save', (event, state) => save(state));
@@ -384,9 +389,14 @@ function listen() {
   ipcMain.handle('library:keep', (event, article) => keep(article ?? {}).catch((error) => ({ error: error.message })));
   // Taking a book out of the library puts its file in the Trash, where it can be got back.
   // (A test run deletes it outright, so as not to fill the real Trash, and shows no dialogs.)
-  // Its highlights go with it.
+  // Its highlights go with it, and so does whatever else is told of its going (its chats).
   ipcMain.handle('library:discard', async (event, file) => {
     opened.delete(file);
+    try {
+      gone?.(file);
+    } catch {
+      // (the book goes all the same)
+    }
     for (const gone of [lights(file), within(file)]) {
       if (headless) fs.rmSync(gone, { recursive: true, force: true });
       else if (fs.existsSync(gone)) await shell.trashItem(gone).catch(() => {});
@@ -411,4 +421,4 @@ function listen() {
   });
 }
 
-module.exports = { listen, folder, place, usual, move };
+module.exports = { listen, folder, place, usual, move, discarded };
