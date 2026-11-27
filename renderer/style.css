@@ -207,6 +207,9 @@ button:not(:disabled) {
 /* ---------- top bar ---------- */
 
 #top {
+  position: relative; /* over the page, which runs under it, and over the mist */
+  z-index: 2;
+  grid-row: 1;
   grid-column: 1 / -1;
   display: flex;
   align-items: center;
@@ -214,6 +217,25 @@ button:not(:disabled) {
   min-width: 0;
   padding: 0 9px 0 89px; /* clear of the window buttons; the last icon 16px from the right edge, as they are from the left */
   -webkit-app-region: drag;
+}
+
+/* The bar has no ground of its own. A page runs under it to the top of the window, and the
+   mist, which lies over the page and under the bar, blurs what is beneath it and washes it
+   with the paper: fully behind the bar's buttons, then less and less down to where a
+   page's first line stands (58px), so that nothing ends at an edge. It keeps off the rail. */
+#mist {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: var(--rail-width);
+  z-index: 1;
+  height: 58px;
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  -webkit-mask-image: linear-gradient(to bottom, #000 36px, transparent);
+  mask-image: linear-gradient(to bottom, #000 36px, transparent);
+  pointer-events: none;
 }
 
 /* The path, while reading: the tab you came from, which takes you back, then the title. */
@@ -269,9 +291,6 @@ body[data-screen='reading'] #rail-toggle {
 
 /* While reading, the bar lies over the top of the page and keeps out of sight until the
    pointer comes up to it (app.js marks the body), or the keyboard reaches one of its buttons. */
-  z-index: 2;
-  grid-row: 1;
-  background: var(--paper);
 body[data-screen='reading'] #top {
   opacity: 0;
   transition: opacity 0.18s ease;
@@ -279,6 +298,18 @@ body[data-screen='reading'] #top {
 
 body[data-screen='reading'][data-bar='shown'] #top,
 body[data-screen='reading'] #top:focus-within {
+  opacity: 1;
+}
+
+/* The mist comes and goes with it. (It is not inside the bar, because a thing that is fading
+   cannot blur what is behind it: it would show only the wash until it had quite arrived.) */
+body[data-screen='reading'] #mist {
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+body[data-screen='reading'][data-bar='shown'] #mist,
+body[data-screen='reading']:has(#top:focus-within) #mist {
   opacity: 1;
 }
 
@@ -326,6 +357,8 @@ body[data-view='settings'] #library-tools {
 /* One icon for each way of looking at the library; settings at the foot. */
 
 #rail {
+  grid-row: 2; /* under the bar, beside the page (which has the window's whole height) */
+  grid-column: 1;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -404,8 +437,9 @@ body[data-rail='wide'] .tab-name {
   font-weight: 500;
 }
 
-/* Every icon is one of Solar's (renderer/icons), drawn at 22px, where its lines are a little
-   under 1.5px. The rail's have a linear and a bold form. */
+/* Every icon is one of Solar's (renderer/icons), drawn at 22px, with a line a little
+   heavier than Solar's own (icons/CREDITS.md): about 1.6px there. The rail's have a linear
+   and a bold form. */
 .icon {
   flex: none;
   width: 22px;
@@ -459,6 +493,14 @@ body > main {
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--ink) 20%, transparent) transparent;
+}
+
+/* The library runs from the top of the window, under the bar; its page begins below it. */
+#library {
+  grid-row: 1 / 3;
+  grid-column: 2;
+  padding-top: 44px;
+  scroll-padding-top: 44px;
 }
 
 body > main[hidden] {
@@ -1508,7 +1550,7 @@ body > main[hidden] {
 /* Settings: a page as wide as any other, in parts, each under its name and a rule as a
    shelf is. A part's rows stand in two columns where there is room, as cards do. Each row is
    a name, with a line more about it where that helps, and its control at the right: the text
-   panel's own strips and dots, all one width, so that they stand in a line. */
+   panel's own strips and dots. */
 .set {
   margin: 0 0 40px;
 }
@@ -1583,10 +1625,22 @@ body > main[hidden] {
   user-select: text;
 }
 
-.set-row > .seg,
+/* On the page a strip is only as long as its words need, as the Library's filters are: each
+   choice as wide as the widest of them. The dots stand as far apart as they do in the text
+   panel. Every control ends at the row's right edge. */
+.set-row > .seg {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  margin: 0;
+}
+
+.set-row > .seg button {
+  padding: 0 16px;
+}
+
 .set-row > .dots {
-  flex: none;
-  width: 240px;
+  gap: 12px;
   margin: 0;
 }
 
@@ -1603,10 +1657,10 @@ body > main[hidden] {
 
 .set-button {
   flex: none;
-  height: 30px;
-  padding: 0 14px;
+  height: 36px; /* a pill as tall as a tab, as the strips are */
+  padding: 0 16px;
   border: 0;
-  border-radius: 9px;
+  border-radius: 18px;
   background: var(--hover);
   color: var(--ink);
   font-size: calc(var(--text-size) - 1px);
@@ -1665,6 +1719,7 @@ body > main[hidden] {
 
 .set-foot .star {
   display: inline-block;
+  position: relative;
   top: -0.12em;
   margin-left: 0.04em;
   font-size: 0.62em;
@@ -1678,13 +1733,11 @@ body > main[hidden] {
   font-variation-settings: normal;
   letter-spacing: 0;
 }
-  background: var(--hover);
 
 /* The text panel: a menu's surface, holding rows of choices in place of a list. Each row is
    a name over a strip of buttons; of three, the one in force is filled, as in a menu. */
 .panel {
   width: 232px;
-  background: var(--ink);
   padding: 9px 10px 10px;
 }
 
@@ -1706,8 +1759,42 @@ body > main[hidden] {
   display: flex;
   gap: 2px;
   padding: 2px;
-  border-radius: 9px;
+  border-radius: 18px; /* a pill as tall as a tab (36px), and as round */
   background: var(--hover);
+}
+
+/* The choice in force: one dark pill behind the names, which slides to the one chosen. The
+   choices are all one width, so where the pill stands follows from how many there are (--n)
+   and which is pressed (--i), and the rules below read both off the buttons. A strip with
+   nothing pressed (the two sizes of A) has no pill. */
+.seg::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  width: calc((100% - 4px - (var(--n, 1) - 1) * 2px) / var(--n, 1));
+  border-radius: 16px;
+  background: var(--ink);
+  transform: translateX(calc(var(--i, 0) * (100% + 2px)));
+  transition: transform 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.seg:not(:has(> [aria-pressed='true']))::before {
+  display: none;
+}
+
+.seg:has(> :nth-child(2):last-child) { --n: 2; }
+.seg:has(> :nth-child(3):last-child) { --n: 3; }
+.seg:has(> :nth-child(4):last-child) { --n: 4; }
+.seg:has(> :nth-child(2)[aria-pressed='true']) { --i: 1; }
+.seg:has(> :nth-child(3)[aria-pressed='true']) { --i: 2; }
+.seg:has(> :nth-child(4)[aria-pressed='true']) { --i: 3; }
+
+@media (prefers-reduced-motion: reduce) {
+  .seg::before {
+    transition: none;
+  }
 }
 
 .seg:not(:last-child),
@@ -1747,17 +1834,19 @@ body > main[hidden] {
 }
 
 .seg button {
+  position: relative; /* over the pill */
   flex: 1;
-  height: 26px;
+  height: 32px;
   padding: 0;
   border: 0;
-  border-radius: 7px;
+  border-radius: 16px;
   background: transparent;
   color: var(--soft);
   font-size: calc(var(--text-size) - 1px);
-  transition: background-color 0.12s ease, color 0.12s ease;
+  transition: background-color 0.12s ease, color 0.16s ease;
 }
 
+/* Pointed at, a name darkens; nothing is drawn behind it. */
 .seg button:hover:not(:disabled) {
   color: var(--ink);
 }
@@ -1765,6 +1854,11 @@ body > main[hidden] {
 .seg button[aria-pressed='true'],
 .seg button[aria-pressed='true']:hover {
   color: var(--paper);
+}
+
+/* A button that is no choice (a size of A) shows a wash while it is pressed. */
+.seg button:not([aria-pressed]):active:not(:disabled) {
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
 }
 
 .seg button:disabled {
@@ -2130,6 +2224,12 @@ body[data-screen='reading'] #top {
   view-transition-name: bar;
 }
 
+/* (And the mist under it, for the same reason: unnamed, it would be under the sheet for as
+   long as the turn lasts, and the bar would stand on the bare page.) */
+body[data-screen='reading'] #mist {
+  view-transition-name: mist;
+}
+
 ::view-transition {
   pointer-events: none;
 }
@@ -2141,7 +2241,8 @@ body[data-screen='reading'] #top {
   mix-blend-mode: normal;
 }
 
-::view-transition-old(bar) {
+::view-transition-old(bar),
+::view-transition-old(mist) {
   display: none;
 }
 
@@ -2478,6 +2579,76 @@ body[data-screen='reading'] #top {
    hides the unseen words over it). It lets a highlight under it show through. */
 #page ::selection {
   background: var(--select);
+}
+
+/* ---------- waiting ---------- */
+
+/* What shows while the app is busy: the asterisk of its name (in the opening's face:
+   opening.css). It has five arms, so a fifth of a turn leaves it looking as it began: it
+   turns one, rests, and turns again, about the point where its arms meet. Its box is drawn
+   round that point, so centring the box centres the mark. Small, it stands beside a word. */
+.tick {
+  display: inline-block;
+  flex: none;
+  width: 0.5456em;
+  height: 0.72em;
+  margin-right: 6px;
+  color: var(--muted);
+  font: 700 22px / 1 'Fraunces Logo', var(--font-title);
+  font-optical-sizing: none;
+  font-variation-settings: 'opsz' 144, 'SOFT' 100, 'WONK' 0;
+  vertical-align: middle;
+  transform-origin: 50% 0.366em;
+  animation: tick 1s cubic-bezier(0.5, 0, 0.2, 1) infinite;
+  user-select: none;
+}
+
+.tick[hidden] {
+  display: none;
+}
+
+/* (In the find bar it has the bar's own spacing.) */
+.finder-head > .tick {
+  margin-right: 0;
+}
+
+/* (Beside a word it stands a hair high, to sit level with the middle of the letters.) */
+.add-said .tick,
+.set-button .tick {
+  translate: 0 -1px;
+}
+
+/* Where the wait may be too short to notice, it is not shown for the first third of a second. */
+.tick.late,
+.tick.wait {
+  animation: tick 1s cubic-bezier(0.5, 0, 0.2, 1) infinite, arrive 0.2s ease 0.3s backwards;
+}
+
+/* In the middle of the reader, while what is to be read is being opened. */
+.tick.wait {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: -0.36em 0 0 -0.2728em;
+  font-size: 46px;
+}
+
+@keyframes tick {
+  0% {
+    transform: rotate(0);
+  }
+  60%,
+  100% {
+    transform: rotate(72deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tick,
+  .tick.late,
+  .tick.wait {
+    animation: none;
+  }
 }
 
 @keyframes arrive {

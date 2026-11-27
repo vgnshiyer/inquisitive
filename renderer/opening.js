@@ -23,7 +23,10 @@
     // A fifth of a turn: the asterisk has five arms, so it lands looking as it started.
     const landing = mark.animate([{ opacity: 0, transform: 'scale(0) rotate(-72deg)' }, { opacity: 1, transform: 'none' }], { duration: 800, delay: 650, easing: EASE, fill: 'both' });
     await landing.finished;
-    await opening.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 400, delay: 400, easing: 'ease', fill: 'forwards' }).finished;
+    const uncovering = opening.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 400, delay: 400, easing: 'ease', fill: 'forwards' });
+    // As the window begins to be uncovered, the page behind arrives (app.js).
+    setTimeout(() => window.dispatchEvent(new Event('uncover')), 400);
+    await uncovering.finished;
     clearTimeout(giveUp);
     close();
   }, close);

@@ -263,9 +263,42 @@ window.addEventListener('blur', hideTip);
 
 let menu = null; // the open menu, if any: its element, and the button it hangs from
 
+/** What shows while the app is busy with something: the asterisk of its name, which turns a
+    fifth of a turn, rests, and turns again (style.css). */
+function tick(className) {
+  const made = el('span', className ? 'tick ' + className : 'tick', '*');
+  made.setAttribute('aria-hidden', 'true');
+  return made;
+}
+
+/** While what is to be read is being opened, the asterisk ticks in the middle of the window
+    (if opening takes long enough to be noticed: style.css). */
+function waiting(on) {
+  $('reading').querySelector(':scope > .tick')?.remove();
+  if (on) $('reading').append(tick('wait'));
+}
+
+/** A menu, or one of the reader's panels, comes into sight: slightly, from the corner it
+    hangs by (its top right under a button, which is where they all hang but a menu at a point). */
+function easeIn(node, corner = '100% 0') {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  node.style.transformOrigin = corner;
+  node.animate([{ opacity: 0, transform: 'translateY(-4px) scale(0.98)' }, { opacity: 1, transform: 'none' }], { duration: 150, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' });
+}
+
+/** And goes: it fades, quicker than it came, and is out of reach from the moment it starts. */
+function easeOut(node) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return node.remove();
+  node.inert = true;
+  node.style.pointerEvents = 'none';
+  const gone = () => node.remove();
+  node.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 90, easing: 'ease', fill: 'forwards' }).finished.then(gone, gone);
+  setTimeout(gone, 200); // (a window that is not being drawn does not finish a fade: it goes all the same)
+}
+
 function closeMenu() {
   if (!menu) return;
-  menu.node.remove();
+  easeOut(menu.node);
   menu.owner?.setAttribute('aria-expanded', 'false');
   if (menu.owner?.matches('.tool')) menu.owner.dataset.tip = menu.owner.getAttribute('aria-label'); // its tip was put away
   menu = null;
@@ -327,6 +360,7 @@ function openMenu(entries, at, long) {
   const y = owner ? from.bottom + 6 : at.y;
   node.style.left = Math.max(8, Math.min(x, innerWidth - box.width - 8)) + 'px';
   node.style.top = Math.max(8, Math.min(y, innerHeight - box.height - 8)) + 'px';
+  easeIn(node, owner ? '100% 0' : '0 0');
   owner?.setAttribute('aria-expanded', 'true');
   const on = long && node.querySelector('.on');
   if (on) node.scrollTop = on.offsetTop - (node.clientHeight - on.offsetHeight) / 2;
@@ -377,11 +411,102 @@ function drawRail() {
 }
 
 function choose(id) {
+  const was = tab;
   tab = TABS.find((entry) => entry.id === id);
   drawRail();
   drawShelf();
   drawCrumbs();
   $('library').scrollTop = 0;
+  if (tab !== was) arrive();
+}
+
+// A page of the library arrives: its heading, then each line of it down the window, fades
+// in while rising a little, each line a moment after the one above. It is slight and quick,
+// to be felt more than seen. A page arrives when you turn to it from another, when you come
+// back to the library from reading, and when the app opens; not when it is drawn again
+// where it stands (a book added, a filter chosen), which would be a flicker.
+const ARRIVING = '#heading, #heading-side > *, #shelf-body :is(.shelf-tools, .band-head, .card, .band-new, .band-none, .set-head, .set-lead, .set-sample, .set-row, .set-foot, .begin > *)';
+
+function arrive() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  // Only what is in sight, taken from the top of the window down.
+  const parts = [...document.querySelectorAll(ARRIVING)]
+    .map((part) => ({ part, box: part.getBoundingClientRect() }))
+    .filter(({ box }) => box.height && box.bottom > 0 && box.top < innerHeight)
+    .sort((a, b) => a.box.top - b.box.top);
+  let line = -1;
+  let last = -Infinity;
+  for (const { part, box } of parts) {
+    // Things that begin about level are one line, and arrive together.
+    if (box.top > last + 8) {
+      line++;
+      last = box.top;
+    }
+    part.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 240, delay: Math.min(line, 6) * 28, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)', fill: 'backwards' });
+  }
+}
+
+// (The opening says when it begins to uncover the window: opening.js.)
+window.addEventListener('uncover', arrive);
+
+// A page drawn again where it stands does not arrive, but what is on it need not jump
+// either. For a change you make to the page itself (a filter, an order, a collection's
+// colours laid out or put away, a colour chosen) the page is drawn through this: what was
+// there before glides to where it now belongs, what is new rises in as a page's lines do,
+// the colours laid out arrive one after another, and a colour that has changed washes over.
+// The page is made afresh each time, so things are told apart by what they stand for.
+const GLIDING = '#shelf-body :is(.card, .band-head, .band-dot, .band-none, .band-new)';
+
+function gliding(draw) {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return draw();
+  const EASE = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
+  const seen = (box) => box.height && box.bottom > 0 && box.top < innerHeight;
+  const bands = () => [...document.querySelectorAll('#shelf-body .band')];
+  const nameOf = (part, all) => {
+    if (part.classList.contains('card')) return 'card ' + part.item?.id;
+    if (part.classList.contains('band-new')) return 'new';
+    return part.className.split(' ')[0] + ' ' + all.indexOf(part.closest('.band'));
+  };
+  const was = new Map();
+  let all = bands();
+  for (const part of document.querySelectorAll(GLIDING)) was.set(nameOf(part, all), { box: part.getBoundingClientRect(), colour: getComputedStyle(part).backgroundColor });
+  const tray = document.querySelector('#shelf-body .palette');
+  const trayBox = tray?.getBoundingClientRect();
+
+  draw();
+
+  all = bands();
+  let fresh = 0;
+  for (const part of document.querySelectorAll(GLIDING)) {
+    const old = was.get(nameOf(part, all));
+    const box = part.getBoundingClientRect();
+    if (!old) {
+      // New to the page: it rises in, each a moment after the last.
+      if (seen(box) && !part.classList.contains('band-dot')) part.animate([{ opacity: 0, transform: 'translateY(6px)' }, { opacity: 1, transform: 'none' }], { duration: 240, delay: Math.min(fresh++, 6) * 24, easing: EASE, fill: 'backwards' });
+      continue;
+    }
+    if (!seen(box) && !seen(old.box)) continue;
+    const dx = old.box.left - box.left;
+    const dy = old.box.top - box.top;
+    if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) part.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: 300, easing: EASE });
+    const colour = getComputedStyle(part).backgroundColor;
+    if (colour !== old.colour) part.animate([{ backgroundColor: old.colour }, { backgroundColor: colour }], { duration: 300, easing: 'ease' });
+  }
+  // The colours laid out: the tray comes into sight and its colours arrive in turn. Put
+  // away, a picture of it fades where it stood, as the page closes over the place.
+  const laid = document.querySelector('#shelf-body .palette');
+  if (laid && !tray) {
+    laid.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 180, easing: 'ease' });
+    [...laid.children].forEach((swatch, n) => swatch.animate([{ opacity: 0, transform: 'scale(0.5)' }, { opacity: 1, transform: 'none' }], { duration: 200, delay: 60 + n * 18, easing: EASE, fill: 'backwards' }));
+  } else if (tray && !laid && seen(trayBox)) {
+    const ghost = tray.cloneNode(true);
+    ghost.inert = true;
+    Object.assign(ghost.style, { position: 'fixed', left: trayBox.left + 'px', top: trayBox.top + 'px', margin: '0', pointerEvents: 'none' });
+    $('library').append(ghost);
+    const gone = () => ghost.remove();
+    ghost.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, easing: 'ease', fill: 'forwards' }).finished.then(gone, gone);
+    setTimeout(gone, 300); // (a window that is not being drawn does not finish a fade: it goes all the same)
+  }
 }
 
 // ---------- the shelf ----------
@@ -555,7 +680,7 @@ function shelfTools(look) {
     pill.setAttribute('aria-pressed', String(id === look.kind));
     pill.addEventListener('click', () => {
       look.kind = id;
-      drawShelf();
+      gliding(drawShelf);
     });
     made.append(pill);
   }
@@ -567,7 +692,7 @@ function shelfTools(look) {
   button.append(el('span', 'sort-icon'), el('span', '', sortOf(look.sort)[1]));
   button.addEventListener('click', () => {
     if (menu?.owner === button) return closeMenu();
-    const pick = (id) => () => ((look.sort = id), drawShelf());
+    const pick = (id) => () => ((look.sort = id), gliding(drawShelf));
     openMenu(SORTS.flatMap(([label, orders], i) => [...(i ? [null] : []), label, ...orders.map(([id, name]) => ({ name, on: id === look.sort, run: pick(id) }))]), button);
   });
   made.append(button);
@@ -589,7 +714,7 @@ function swatches(collection) {
     swatch.addEventListener('click', () => {
       collection.hue = hue;
       palette = null;
-      drawShelf();
+      gliding(drawShelf);
     });
     made.append(swatch);
   });
@@ -776,7 +901,7 @@ function shelf(collection, list) {
     dot.setAttribute('aria-expanded', String(palette === collection.id));
     dot.addEventListener('click', () => {
       palette = palette === collection.id ? null : collection.id;
-      drawShelf();
+      gliding(drawShelf);
     });
     const name = el('span', 'band-name', collection.name);
     name.contentEditable = 'plaintext-only';
@@ -973,6 +1098,7 @@ function openAdd() {
     const mine = dialog;
     field.readOnly = true;
     say('Saving…');
+    said.prepend(tick());
     const { item, why } = await addArticle(field.value);
     if (dialog !== mine) return; // closed meanwhile: it is saved all the same
     if (item) return closeDialog();
@@ -1178,6 +1304,7 @@ function showLibrary() {
   $('reading').hidden = true;
   $('library').hidden = false;
   drawCrumbs();
+  arrive();
 }
 
 // ---------- reading ----------
@@ -1252,6 +1379,7 @@ function read(item) {
   document.body.dataset.screen = 'reading';
   $('library').hidden = true;
   $('reading').hidden = false;
+  waiting(false);
   drawPage();
   drawCrumbs();
 }
@@ -1273,11 +1401,15 @@ let book = null; // the book open: its sections, contents and parts, and whether
 async function bind(item) {
   const page = $('page');
   page.replaceChildren();
+  waiting(true);
   let shape;
   try {
     shape = await (item.kind === 'article' ? Article : Book).open(item);
   } catch {
-    if (open === item) page.replaceChildren(el('p', 'book-none', `This ${item.kind === 'article' ? 'article' : 'book'} could not be opened.`));
+    if (open === item) {
+      waiting(false);
+      page.replaceChildren(el('p', 'book-none', `This ${item.kind === 'article' ? 'article' : 'book'} could not be opened.`));
+    }
     return;
   }
   if (open !== item) return; // left while it was opening
@@ -1302,6 +1434,7 @@ async function bind(item) {
   if (book !== mine) return;
   seek(at);
   mine.ready = true;
+  waiting(false);
   // From here the page fetches whatever it comes near.
   mine.watch = new IntersectionObserver((seen) => seen.forEach((entry) => entry.isIntersecting && fill(Number(entry.target.dataset.index))), { root: $('reading'), rootMargin: '1400px 0px' });
   parts.forEach((part) => mine.watch.observe(part));
@@ -1321,11 +1454,15 @@ async function readLights(mine) {
 async function bindPdf(item) {
   const page = $('page');
   page.replaceChildren();
+  waiting(true);
   let pdf;
   try {
     pdf = await Pdf.open(item);
   } catch {
-    if (open === item) page.replaceChildren(el('p', 'book-none', 'This PDF could not be opened.'));
+    if (open === item) {
+      waiting(false);
+      page.replaceChildren(el('p', 'book-none', 'This PDF could not be opened.'));
+    }
     return;
   }
   if (open !== item) return void Pdf.close(pdf); // left while it was opening
@@ -1343,6 +1480,7 @@ async function bindPdf(item) {
   item.pages = item.sections = parts.length;
   seek(item.at ?? { section: 0, part: 0 });
   mine.ready = true;
+  waiting(false);
   mine.watch = new IntersectionObserver((seen) => seen.forEach((entry) => (entry.isIntersecting ? fill : blank)(Number(entry.target.dataset.index))), { root: $('reading'), rootMargin: '1400px 0px' });
   parts.forEach((part) => mine.watch.observe(part));
 }
@@ -2295,6 +2433,7 @@ function drawFound() {
   if (find?.more) list.append(el('p', 'finder-none', `Only the first ${MOST.toLocaleString('en-US')} are listed.`));
   list.hidden = !find;
   finder.count.textContent = found.length ? found.length.toLocaleString('en-US') + (find.more ? '+' : '') : '';
+  finder.busy.hidden = !find || find.done; // still looking through the book
   finder.clear.hidden = !finder.field.value;
   // The row marked to begin with is the one last gone to, in the middle of the list, or else the first.
   if (finder.mark < 0 && found.length) markRow(Math.max(0, find.at), fresh && find.at > 0 ? 'middle' : null);
@@ -2304,7 +2443,7 @@ function closeFind() {
   if (!finder) return;
   const { node, field, wait } = finder;
   finder = null;
-  node.remove();
+  easeOut(node);
   if (wait) look(field.value); // what was typed last is what is looked for
   clearTimeout(wait);
   findTool.setAttribute('aria-expanded', 'false');
@@ -2336,11 +2475,13 @@ function openFind() {
   clear.type = 'button';
   clear.setAttribute('aria-label', 'Clear');
   clear.append(el('span', 'icon'));
+  const busy = tick('late');
+  busy.hidden = true;
   const head = el('label', 'finder-head');
-  head.append(el('span', 'icon'), field, count, clear);
+  head.append(el('span', 'icon'), field, busy, count, clear);
   const list = el('div', 'finder-list');
   node.append(head, list);
-  finder = { node, field, count, clear, list, rows: [], shown: null, mark: -1, wait: 0 };
+  finder = { node, field, busy, count, clear, list, rows: [], shown: null, mark: -1, wait: 0 };
 
   const ask = () => {
     clearTimeout(finder.wait);
@@ -2376,6 +2517,7 @@ function openFind() {
   const box = node.getBoundingClientRect();
   node.style.left = Math.max(8, Math.min(from.right - box.width, innerWidth - box.width - 8)) + 'px';
   node.style.top = from.bottom + 6 + 'px';
+  easeIn(node);
   findTool.setAttribute('aria-expanded', 'true');
   delete findTool.dataset.tip; // open, the panel says what the button is for
   drawFound();
@@ -2774,7 +2916,7 @@ let lister = null; // the list of highlights, when it is open
 
 function closeLights() {
   if (!lister) return;
-  lister.remove();
+  easeOut(lister);
   lister = null;
   lightsTool.setAttribute('aria-expanded', 'false');
   lightsTool.dataset.tip = lightsTool.getAttribute('aria-label');
@@ -2854,6 +2996,7 @@ async function openLights() {
   const box = node.getBoundingClientRect();
   node.style.left = Math.max(8, Math.min(from.right - box.width, innerWidth - box.width - 8)) + 'px';
   node.style.top = from.bottom + 6 + 'px';
+  easeIn(node);
   // It opens at where you are: the first highlight in the section being read, or after it.
   const here = mine.ready ? placeNow().section : 0;
   const near = kept.findIndex((light) => light.section >= here);
@@ -3006,7 +3149,12 @@ function drawPanel() {
     made.addEventListener('click', () => {
       run();
       setText();
-      drawPanel();
+      // A size of A changes the number shown and what can be pressed, so the panel is drawn
+      // afresh. A choice in a strip changes nothing else: its strip is brought up to date
+      // where it stands, and the pill slides to the choice. (Drawn afresh, the new strip
+      // would simply be at its new place, with nothing to slide from.)
+      if (on == null) return drawPanel();
+      for (const button of made.parentNode.children) button.setAttribute('aria-pressed', String(button === made));
     });
     return made;
   };
@@ -3060,7 +3208,7 @@ function drawPanel() {
 
 function closePanel() {
   if (!panel) return;
-  panel.remove();
+  easeOut(panel);
   panel = null;
   textTool.setAttribute('aria-expanded', 'false');
   textTool.dataset.tip = textTool.getAttribute('aria-label');
@@ -3081,6 +3229,7 @@ function openPanel() {
   const box = panel.getBoundingClientRect();
   panel.style.left = Math.max(8, Math.min(from.right - box.width, innerWidth - box.width - 8)) + 'px';
   panel.style.top = from.bottom + 6 + 'px';
+  easeIn(panel);
   textTool.setAttribute('aria-expanded', 'true');
   delete textTool.dataset.tip; // open, the panel says what the button is for
   hideTip();
@@ -3180,6 +3329,7 @@ function settings() {
     save(true); // what is not yet written goes with it
     mover.disabled = reveal.disabled = true;
     mover.textContent = 'Moving…';
+    mover.prepend(tick());
     const moved = await window.api.settings.move();
     mover.disabled = reveal.disabled = false;
     mover.textContent = 'Move…';
@@ -3311,12 +3461,12 @@ window.addEventListener('keydown', (e) => {
   else if (finder) closeFind(); // or the find panel,
   else if (lister) closeLights(); // or the list of highlights,
   else if (open) showLibrary(); // or what is being read,
-  else if (palette) (palette = null), drawShelf(); // or puts the colours away
+  else if (palette) (palette = null), gliding(drawShelf); // or puts the colours away
 });
 
 // A click anywhere else puts the colours away too.
 document.addEventListener('click', (e) => {
-  if (palette && !e.target.closest('.palette, .band-dot')) (palette = null), drawShelf();
+  if (palette && !e.target.closest('.palette, .band-dot')) (palette = null), gliding(drawShelf);
 });
 
 // The library arrives from the main process; then the first page can be drawn.
