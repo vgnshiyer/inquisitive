@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/run.test.mjs",
-    "package": "electron-packager . Inquisitive --platform=darwin --arch=arm64 --icon=assets/icon.icns --app-bundle-id=me.vgnshiyer.inquisitive --out=dist --overwrite --ignore='^/design' --ignore='^/dist' --ignore='^/test' --ignore='/node_modules/@anthropic-ai/claude-agent-sdk-' && codesign --force --deep --sign - dist/Inquisitive-darwin-arm64/Inquisitive.app"
+    "package": "electron-packager . Inquisitive --platform=darwin --arch=arm64 --icon=assets/icon.icns --app-bundle-id=me.vgnshiyer.inquisitive --out=dist --overwrite --ignore='^/design' --ignore='^/dist' --ignore='^/test' --ignore='/node_modules/@anthropic-ai/claude-agent-sdk-' --ignore='/node_modules/(@napi-rs|@google|@aws-sdk|@aws|@smithy|protobufjs|@protobufjs|@types)(/|$)' && codesign --force --deep --sign - dist/Inquisitive-darwin-arm64/Inquisitive.app"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
