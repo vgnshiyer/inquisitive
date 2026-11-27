@@ -109,7 +109,7 @@
 /* The things that change colour quickly when pointed at would chase a paper and ink that are
    themselves changing, and trail behind them. While a theme gives way to another (app.js
    marks the root for as long as it takes) they keep step instead. */
-:root.theming :is(.tool, .tab, .card, .begin-add, .pill, .sort, .dot, .seg button, .band-dot, .swatch, .band-bin, .band-new) {
+:root.theming :is(.tool, .tab, .card, .begin-add, .pill, .sort, .dot, .seg button, .band-dot, .swatch, .band-bin) {
   transition: none !important;
 }
 
@@ -860,7 +860,6 @@ body > main[hidden] {
 .band-bin:focus-visible,
 .band-dot:focus-visible,
 .swatch:focus-visible,
-.band-new:focus-visible,
 .begin-add:focus-visible,
 .fill:focus-visible,
 #crumbs .step:focus-visible {
@@ -2635,38 +2634,9 @@ body.dragging * {
   color: var(--muted);
 }
 
-/* Said before there are any collections, above the way to make the first. */
+/* Said before there are any collections. */
 .band-none.first {
   margin-bottom: 16px;
-}
-
-/* The way to make another collection, at the foot of the page. */
-.band-new {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 32px;
-  margin-left: -8px;
-  padding: 0 14px 0 8px;
-  border: 0;
-  border-radius: 16px;
-  background: transparent;
-  color: var(--soft);
-  transition: background-color 0.12s ease, color 0.12s ease;
-}
-
-.band-new::before {
-  content: '';
-  width: 18px;
-  height: 18px;
-  background: currentColor;
-  -webkit-mask: url(icons/add-circle-linear.svg) center / contain no-repeat;
-  mask: url(icons/add-circle-linear.svg) center / contain no-repeat;
-}
-
-.band-new:hover {
-  background: var(--hover);
-  color: var(--ink);
 }
 
 /* ---------- sorting into collections ---------- */

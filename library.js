@@ -38,14 +38,17 @@ function within(file) {
 
 // ---------- what is kept ----------
 
-/** What the library file holds; an empty library if there is none yet. One that cannot be
-    read is set aside, not written over. */
+/** What the library file holds; an empty library if there is none yet. One that is there
+    but could not be opened is said to be unreadable (the window then shows nothing and keeps
+    nothing, so that it is not written over); one whose words make no sense is set aside,
+    not written over. */
 function load() {
   let text;
   try {
     text = fs.readFileSync(record(), 'utf8');
-  } catch {
-    return { items: [], collections: [], read: {} };
+  } catch (error) {
+    if (error.code === 'ENOENT') return { items: [], collections: [], read: {} }; // none yet
+    return { unreadable: true };
   }
   try {
     const kept = JSON.parse(text);
@@ -73,6 +76,15 @@ function days(read) {
 function save(state) {
   if (!state || !Array.isArray(state.items) || !Array.isArray(state.collections)) return;
   fs.mkdirSync(folder(), { recursive: true });
+  // A library with things in it is never written over by one with nothing in it without a
+  // copy of it being kept beside it first.
+  if (!state.items.length) {
+    try {
+      if (JSON.parse(fs.readFileSync(record(), 'utf8')).items?.length) fs.copyFileSync(record(), path.join(folder(), `library.before-emptying-${Date.now()}.json`));
+    } catch {
+      // (none there, or none that can be read: nothing to keep a copy of)
+    }
+  }
   const aside = record() + '.writing';
   fs.writeFileSync(aside, JSON.stringify({ version: 1, items: state.items, collections: state.collections, read: days(state.read) }, null, 2));
   fs.renameSync(aside, record());

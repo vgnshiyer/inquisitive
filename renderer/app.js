@@ -94,14 +94,17 @@ const past = (days) => (days == null ? undefined : Date.now() - days * DAY);
 let items = SAMPLING ? SAMPLE.map((item) => ({ ...item, added: past(item.added), opened: past(item.opened), finished: past(item.finished) })) : [];
 if (!SAMPLING) collections.length = 0;
 
-let kept = ''; // the library as it was last kept
+let kept = null; // the library as it was last kept: nothing, until it has arrived
 let keeping = 0;
 
-/** Keeps the library, a moment after it last changed; at once, if asked. */
+/** Keeps the library, a moment after it last changed; at once, if asked. Nothing is kept
+    before the library has arrived: until then what the window holds is not the library but
+    an empty place for it, and keeping that would write over the real one. */
 function save(now) {
   if (SAMPLING) return;
   clearTimeout(keeping);
   const write = () => {
+    if (kept === null) return;
     const state = JSON.stringify({ items, collections, read: spent });
     if (state === kept) return;
     kept = state;
@@ -454,7 +457,7 @@ function choose(id, shelf = null) {
 // to be felt more than seen. A page arrives when you turn to it from another, when you come
 // back to the library from reading, and when the app opens; not when it is drawn again
 // where it stands (a book added, a filter chosen), which would be a flicker.
-const ARRIVING = '#heading, #heading-under, #heading-side > *, #shelf-body :is(.shelf-tools, .band-head, .card, .recall, .band-new, .band-none, .set-head, .set-lead, .set-sample, .set-row, .set-prompts, .set-foot, .begin > *)';
+const ARRIVING = '#heading, #heading-under, #heading-side > *, #shelf-body :is(.shelf-tools, .band-head, .card, .recall, .band-none, .set-head, .set-lead, .set-sample, .set-row, .set-prompts, .set-foot, .begin > *)';
 
 function arrive() {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -484,7 +487,7 @@ window.addEventListener('uncover', arrive);
 // there before glides to where it now belongs, what is new rises in as a page's lines do,
 // the colours laid out arrive one after another, and a colour that has changed washes over.
 // The page is made afresh each time, so things are told apart by what they stand for.
-const GLIDING = '#shelf-body :is(.card, .band-head, .band-dot, .band-none, .band-new)';
+const GLIDING = '#shelf-body :is(.card, .band-head, .band-dot, .band-none)';
 
 function gliding(draw) {
   if (matchMedia('(prefers-reduced-motion: reduce)').matches) return draw();
@@ -493,7 +496,6 @@ function gliding(draw) {
   const bands = () => [...document.querySelectorAll('#shelf-body .band')];
   const nameOf = (part, all) => {
     if (part.classList.contains('card')) return 'card ' + part.item?.id;
-    if (part.classList.contains('band-new')) return 'new';
     return part.className.split(' ')[0] + ' ' + all.indexOf(part.closest('.band'));
   };
   const was = new Map();
@@ -1207,15 +1209,12 @@ function shelves() {
   if (alone) return [...(items.length ? [shelfTools(looks.collections)] : []), shelf(alone, list.filter((item) => item.collection === alone.id))];
   const loose = list.filter((item) => !collections.some((c) => c.id === item.collection));
   // A collection is made on the rail, under the others. With none yet, the page says what
-  // one is and has the way to make the first, since the rail may be too narrow to show its own.
-  const add = el('button', 'band-new', 'New collection');
-  add.type = 'button';
-  add.addEventListener('click', openNewCollection);
+  // one is.
   return [
     ...(items.length ? [shelfTools(looks.collections)] : []), // nothing to filter or sort in an empty library
     ...collections.map((c) => shelf(c, list.filter((item) => item.collection === c.id))),
     ...(loose.length ? [shelf(null, loose)] : []),
-    ...(collections.length ? [] : [el('p', 'band-none first', 'A collection gathers related items under one name and colour.'), add]),
+    ...(collections.length ? [] : [el('p', 'band-none first', 'A collection gathers related items under one name and colour.')]),
   ];
 }
 
@@ -5493,7 +5492,11 @@ document.addEventListener('click', (e) => {
 
 // The library arrives from the main process; then the first page can be drawn.
 (SAMPLING ? Promise.resolve(null) : window.api.library.load()).then(async (library) => {
-  if (library) {
+  if (library?.unreadable) {
+    // It is there but could not be read: nothing is shown, and (with nothing held as kept)
+    // nothing is written over it.
+    window.api.library.notify('Your library could not be read. Nothing in it has been changed. Quit Inquisitive and open it again.');
+  } else if (library) {
     items = library.items;
     collections.push(...library.collections);
     spent = library.read ?? {};
