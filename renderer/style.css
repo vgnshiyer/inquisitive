@@ -2362,6 +2362,276 @@ body.dragging * {
 .band-new:hover {
   background: var(--hover);
   color: var(--ink);
+/* ---------- sorting into collections ---------- */
+/* At the end of the line of what is in no collection, after the rule: the way to have the
+   model in use file it (app.js). A pill no taller than the line's bin, with the assistant's
+   asterisk before its words; the words, not the wash, end on the page's margin. */
+.band-filing {
+  display: inline-flex;
+  flex: none;
+  order: 1; /* after the rule, which the line draws last */
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: -6px -12px -6px -2px;
+  padding: 0 12px 0 8px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--soft);
+  font-size: calc(var(--text-size) - 1px);
+  font-weight: 400;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.band-filing:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.band-filing:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.band-filing .icon.asterisk {
+  width: 18px;
+  height: 18px;
+  font-size: 28px;
+}
+
+/* The dialog that lists what the model said: a line of words, then each collection with
+   the items it would take under it, each with a tick; at the foot, the buttons. A long list scrolls between the words and the foot. */
+.modal.filing {
+  width: min(460px, 100%);
+}
+
+.modal.filing .modal-line {
+  margin-bottom: 16px;
+}
+
+.modal.filing .modal-line.wrong {
+  color: var(--danger);
+}
+
+.modal.filing .modal-line .tick {
+  translate: 0 -1px;
+}
+
+.filing-body {
+  max-height: min(50vh, 440px);
+  margin: 0 -24px; /* out to the dialog's edges, so its scroll bar is at the edge */
+  padding: 0 24px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--ink) 20%, transparent) transparent;
+}
+
+.filing-body:empty {
+  display: none;
+}
+
+.filing-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 4px;
+  font-weight: 500;
+}
+
+.filing-head:first-child {
+  margin-top: 0;
+}
+
+/* A collection's colour; an empty ring for no collection. */
+.filing-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--hue);
+}
+
+.filing-dot:not([data-hue]) {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--muted);
+}
+
+/* An item: its tick under the collection's dot, its title under the collection's name. */
+.filing-row {
+  display: flex;
+  align-items: flex-start;
+  padding: 4px 0;
+  line-height: 1.4;
+}
+
+label.filing-row {
+  cursor: pointer;
+}
+
+.filing-row.left {
+  padding-left: 20px;
+  color: var(--soft);
+}
+
+.filing-row input {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: calc((1.4em - 16px) / 2) 7px 0 -3px;
+  border: 1.5px solid var(--muted);
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.filing-row input:checked {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+
+.filing-row input:checked::after {
+  content: '';
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--raised);
+  -webkit-mask: url(icons/check-linear.svg) center / 13px no-repeat;
+  mask: url(icons/check-linear.svg) center / 13px no-repeat;
+}
+
+.filing-row input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+  outline-offset: 1px;
+}
+
+/* Its title, and after it whoever it is by, which goes to the next line whole if it must. */
+.filing-what {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 8px;
+  min-width: 0;
+  transition: color 0.12s ease;
+}
+
+.filing-row:has(input:not(:checked)) .filing-what {
+  color: var(--muted);
+}
+
+.filing-by {
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.filing-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+/* The button that moves what is ticked: the dialog's one filled button. */
+.filing-go {
+  background: var(--ink);
+  color: var(--raised);
+}
+
+.filing-go:hover {
+  background: color-mix(in srgb, var(--ink) 86%, var(--raised));
+}
+
+.filing-go:disabled {
+  background: var(--hover);
+  color: var(--muted);
+}
+
+/* Beside the page's heading once something has been sorted: how many, and the way back. */
+.filing-done {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 1px;
+  color: var(--muted);
+  font-size: calc(var(--text-size) - 1px);
+}
+
+/* ---------- an item's details ---------- */
+/* The dialog that changes what an item is called and who it is by (app.js): a field for
+   each, its name above it; beside the dialog's title, with a model in use, the way to have
+   them filled in. */
+.modal.details {
+  width: min(440px, 100%);
+}
+
+.details-name {
+  display: block;
+  margin-top: 16px;
+  color: var(--soft);
+  font-size: calc(var(--text-size) - 1px);
+}
+
+.details-field {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 6px;
+  font-size: var(--text-size);
+}
+
+/* What fills them in, at the end of the title's line: the assistant's asterisk and what a
+   press will do; its words, not its wash, end on the dialog's margin. While it reads, the
+   asterisk ticks as the app's does when it is busy. */
+.details-fill {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: 0 -12px 0 0;
+  padding: 0 12px 0 8px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: var(--soft);
+  font-size: calc(var(--text-size) - 1px);
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+.details-fill:not(:disabled):hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.details-fill:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.details-fill .icon.asterisk {
+  width: 18px;
+  height: 18px;
+  font-size: 28px;
+  transform-origin: 50% 0.366em; /* its hub (as .tick turns about its own) */
+}
+
+.details-fill.busy .icon.asterisk {
+  animation: tick 1s cubic-bezier(0.5, 0, 0.2, 1) infinite;
+}
+
+.details-said {
+  margin: 10px 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .details-fill.busy .icon.asterisk {
+    animation: none;
+  }
+}
+
 }
 
 /* ---------- reading ---------- */

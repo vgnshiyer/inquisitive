@@ -580,13 +580,14 @@ function card(item, lead, dated) {
   return made;
 }
 
-/** What a right click on a card offers: open it, mark it read or unread, move it to another
+/** What a right click on a card offers: open it, change its title and author, mark it read or unread, move it to another
     collection (or out of them all), or take it out of the library. */
 function cardMenu(item) {
   const change = (how) => () => (how(), drawShelf());
   const done = item.progress >= 1;
   return [
     { name: 'Open', icon: 'open', run: () => read(item) },
+    { name: 'Edit details', icon: 'pen', run: () => openDetails(item) },
     // A book marked unread opens at its start again; one marked finished, at its end.
     done
       ? { name: 'Mark as unread', icon: 'restart', run: change(() => ((item.progress = 0), delete item.finished, delete item.at)) }
@@ -935,6 +936,7 @@ function shelf(collection, list) {
     head.append(el('span', '', 'No collection'));
   }
   head.append(el('span', 'count', String(list.length)));
+  if (!collection && list.length && canAsk()) head.append(filingButton(list));
   if (collection && !items.some((item) => item.collection === collection.id)) {
     // With nothing in it, a collection can be deleted: a bin at the end of its line.
     const bin = el('button', 'band-bin');
@@ -981,6 +983,421 @@ function shelves() {
     ...(collections.length ? [] : [el('p', 'band-none first', 'A collection gathers related items under one name and colour.')]),
     add,
   ];
+}
+
+// ---------- sorting into collections ----------
+// The model in use can file what is in no collection. Asked from that shelf's line, it is
+// sent the titles and authors of those items (and of a few already in each collection, to
+// show what the collection is for; nothing of what is written in any of them), and says
+// which collection each would go in, or a new one that two or more of them would share. A
+// dialog lists what it said, each item with a tick. Nothing moves until the dialog's button
+// is pressed, and what that moved can be put back while the page is still the one shown.
+
+let filed = null; // what the last sorting did, while it can be put back: { moved: [[item, collection id]], made: [collections] }
+
+const FILING = `You sort a reader's library into collections by subject.
+
+You are given the collections there are, each with a label and some of what it already holds, and a numbered list of the items that are in no collection, each with its title, its author or source, and its kind.
+
+Rules:
+- Put an item in a collection there is when it fits that collection's subject.
+- Propose a new collection only when two or more of the items share a subject that no collection covers. Name it in one to three words, in the manner of the names there are.
+- Leave out any item whose subject you cannot tell from its title and author, and any that fits nowhere. Do not guess, and make no collection for odds and ends.
+- Each item goes in one place at most.
+
+Reply with JSON only, with no words around it, in this form:
+{"existing": {"C1": [1, 4]}, "new": [{"name": "Name", "items": [2, 3]}]}`;
+
+let relinking = false; // whether what is connected has been asked for in full on this page's account
+
+/** Whether there is a model to ask. As the app starts only what is already known is held, in
+    which a sign-in to ChatGPT has no models yet: so the first time this is wanted, what is
+    connected is asked for in full, and the page drawn again if that changes the answer. */
+function canAsk() {
+  if (!window.api.connections?.once) return false;
+  const can = () => Boolean(linked?.model);
+  if (!relinking) {
+    relinking = true;
+    const had = can();
+    relink().then(() => can() !== had && tab.shelves && !open && !dialog && !document.activeElement?.closest?.('.band-name') && drawShelf(), () => {});
+  }
+  return can();
+}
+
+/** Asks the model in use where each of `loose` would go. Gives { text } (what it said),
+    { error } (why it could not be asked) or { cancelled }. */
+async function askFiling(key, loose) {
+  const holds = (c) => items.filter((item) => item.collection === c.id).slice(0, 8).map((item) => item.title).join('; ');
+  const text = [
+    'Collections:',
+    ...(collections.length ? collections.map((c, at) => `C${at + 1}. ${c.name}${holds(c) ? ' (holds: ' + holds(c) + ')' : ''}`) : ['(none yet)']),
+    '',
+    'Items in no collection:',
+    ...loose.map((item, at) => `${at + 1}. ${item.title}${item.author || item.site ? ' — ' + (item.author || item.site) : ''} (${KINDS[item.kind].toLowerCase()})`),
+  ].join('\n');
+  const said = await window.api.connections.once(key, { system: FILING, text });
+  return said?.ok ? { text: String(said.text ?? '') } : said?.cancelled ? { cancelled: true } : { error: said?.error || 'The model gave no answer.' };
+}
+
+/** What the model said, made into what the dialog lists: { groups, left }. A group is
+    { collection, list } for a collection there is, or { name, hue, list } for a new one;
+    `left` is what goes nowhere. Anything that cannot be meant is dropped: an item named
+    twice goes where it was first put, and a new collection needs two items. Null if what
+    it said cannot be read at all. */
+function filingOf(text, loose) {
+  let said = null;
+  try {
+    said = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
+  } catch {
+    return null;
+  }
+  if (!said || typeof said !== 'object') return null;
+  const taken = new Set();
+  const free = (numbers) => [...new Set((Array.isArray(numbers) ? numbers : []).map((n) => loose[Number(n) - 1]))].filter((item) => item && !taken.has(item));
+  const take = (list) => list.forEach((item) => taken.add(item));
+  const groups = [];
+  collections.forEach((collection, at) => {
+    const list = free(said.existing?.['C' + (at + 1)]);
+    if (!list.length) return;
+    take(list);
+    groups.push({ collection, list });
+  });
+  const used = new Set(collections.map((c) => c.hue));
+  for (const one of Array.isArray(said.new) ? said.new : []) {
+    const name = String(one?.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 40);
+    const list = free(one?.items);
+    if (!name || !list.length) continue;
+    // One called what a collection is already called goes in that collection.
+    const same = (group) => (group.collection?.name ?? group.name).toLowerCase() === name.toLowerCase();
+    const known = collections.find((c) => c.name.toLowerCase() === name.toLowerCase());
+    const into = groups.find(same) ?? (known ? { collection: known, list: [] } : null);
+    if (!into && list.length < 2) continue;
+    take(list);
+    if (into) {
+      if (!groups.includes(into)) groups.push(into);
+      into.list.push(...list);
+      continue;
+    }
+    const hue = HUES.findIndex((_, at) => !used.has(at));
+    used.add(hue);
+    groups.push({ name, hue: hue < 0 ? (collections.length + groups.length) % HUES.length : hue, list });
+  }
+  return { groups, left: loose.filter((item) => !taken.has(item)) };
+}
+
+/** The button at the end of the line of what is in no collection. */
+function filingButton(loose) {
+  const made = el('button', 'band-filing');
+  made.type = 'button';
+  const mark = el('span', 'icon asterisk', '*');
+  mark.setAttribute('aria-hidden', 'true');
+  made.append(mark, 'Sort into collections');
+  made.addEventListener('click', () => openFiling(loose));
+  return made;
+}
+
+/** The dialog: it says it is reading the titles, then lists what was said, each item with a tick, under
+    the collection it would go in; what goes nowhere is listed last. Its button moves what is
+    ticked. Closed while still asking, the asking is called off. */
+function openFiling(loose) {
+  const key = 'filing' + Date.now();
+  if (!linked?.model) return; // (as it stands now: what is connected may have changed since the page was drawn)
+  let open = true;
+  let asking = true;
+  const form = el('form', 'modal filing');
+  form.setAttribute('role', 'dialog');
+  form.setAttribute('aria-modal', 'true');
+  form.setAttribute('aria-labelledby', 'filing-title');
+  const title = el('h2', 'modal-title', 'Sort into collections');
+  title.id = 'filing-title';
+  const line = el('p', 'modal-line', 'Reading the titles…');
+  line.prepend(tick());
+  const body = el('div', 'filing-body');
+  const cancel = el('button', 'set-button', 'Cancel');
+  cancel.type = 'button';
+  cancel.addEventListener('click', closeDialog);
+  const go = el('button', 'set-button filing-go');
+  go.hidden = true;
+  const foot = el('div', 'filing-foot');
+  foot.append(cancel, go);
+  form.append(title, line, body, foot);
+  openDialog(form, true, () => {
+    open = false;
+    if (asking) window.api.connections.cancel(key);
+  });
+  cancel.focus();
+
+  /** Nothing to tick: one line says why, and the dialog can only be closed. */
+  const only = (words, wrong) => {
+    line.textContent = words;
+    line.classList.toggle('wrong', Boolean(wrong));
+    cancel.textContent = 'Close';
+  };
+
+  askFiling(key, loose).then((answer) => {
+    asking = false;
+    if (!open || answer.cancelled) return;
+    if (answer.error) return only(answer.error, true);
+    const said = filingOf(answer.text, loose.filter((item) => items.includes(item)));
+    if (!said) return only('That did not work. Close this and try again.', true);
+    if (!said.groups.length) return only('Nothing here clearly belongs in a collection.');
+
+    line.textContent = 'Untick anything you would rather leave.';
+    const ticks = new Map(); // each item listed, and its tick
+    const count = () => {
+      const n = [...ticks.values()].filter((box) => box.checked).length;
+      go.textContent = n === 1 ? 'Sort 1 item' : `Sort ${n} items`;
+      go.disabled = !n;
+    };
+    const heading = (hue, name, fresh) => {
+      const head = el('div', 'filing-head');
+      const dot = el('span', 'filing-dot');
+      if (hue != null) dot.dataset.hue = hue;
+      head.append(dot, el('span', '', name));
+      if (fresh) head.append(el('span', 'count', 'new'));
+      return head;
+    };
+    const words = (item) => {
+      const made = el('span', 'filing-what');
+      made.append(el('span', '', item.title));
+      const by = item.author || item.site;
+      if (by) made.append(el('span', 'filing-by', by));
+      return made;
+    };
+    for (const group of said.groups) {
+      body.append(heading(group.collection?.hue ?? group.hue, group.collection?.name ?? group.name, !group.collection));
+      for (const item of group.list) {
+        const row = el('label', 'filing-row');
+        const box = el('input');
+        box.type = 'checkbox';
+        box.checked = true;
+        box.addEventListener('change', count);
+        ticks.set(item, box);
+        row.append(box, words(item));
+        body.append(row);
+      }
+    }
+    if (said.left.length) {
+      body.append(heading(null, 'Left where it is'));
+      for (const item of said.left) {
+        const row = el('div', 'filing-row left');
+        row.append(words(item));
+        body.append(row);
+      }
+    }
+    count();
+    go.hidden = false;
+    go.focus();
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const moved = [];
+      const made = [];
+      for (const group of said.groups) {
+        const list = group.list.filter((item) => ticks.get(item).checked && items.includes(item));
+        if (!list.length) continue;
+        let { collection } = group;
+        if (!collection || !collections.includes(collection)) {
+          collection = { id: 'c' + Date.now() + made.length, name: group.collection?.name ?? group.name, hue: group.collection?.hue ?? group.hue };
+          collections.push(collection);
+          made.push(collection);
+        }
+        for (const item of list) {
+          item.collection = collection.id;
+          moved.push([item, collection.id]);
+        }
+      }
+      filed = moved.length ? { moved, made } : null;
+      closeDialog();
+      gliding(drawShelf);
+    });
+  });
+}
+
+/** Beside the page's heading after a sorting: how many items it moved, and the way to put
+    them back. */
+function filedNote() {
+  const made = el('div', 'filing-done');
+  const n = filed.moved.length;
+  const undo = el('button', 'set-button', 'Undo');
+  undo.type = 'button';
+  undo.addEventListener('click', unfile);
+  made.append(el('span', '', n === 1 ? '1 item sorted' : `${n} items sorted`), undo);
+  return made;
+}
+
+/** Puts back what the last sorting moved: each item still where it was put goes back to no
+    collection, and a collection it made goes if nothing is left in it. */
+function unfile() {
+  const { moved, made } = filed;
+  filed = null;
+  for (const [item, id] of moved) if (item.collection === id) delete item.collection;
+  for (const collection of made) {
+    if (collections.includes(collection) && !items.some((item) => item.collection === collection.id)) collections.splice(collections.indexOf(collection), 1);
+  }
+  gliding(drawShelf);
+}
+
+// ---------- an item's details ----------
+// What an item is called and who it is by can be put right: many a PDF gives no title of its
+// own and is called by its file's name. A dialog has a field for each. With a model in use
+// it can fill them in itself, from the words the item opens with (which is all it is sent):
+// what it says goes into the fields, to be changed or put back, and nothing is kept until
+// the dialog's button is pressed.
+
+const DETAILS = `You are given the opening of a book, a paper or an article, as the words taken from its first pages, and what it is called at present, which is often only a file's name. Say what its title is and who wrote it.
+
+Rules:
+- Give the title as it is printed there, in ordinary capitals even if it is printed all in capitals. Leave a subtitle out unless the title is not clear without it.
+- Give one author's name in full; two as "A and B"; more than two as the first, then "and others".
+- If the words do not show the title, give an empty string for it; the same for the author. Do not guess from the file's name.
+
+Reply with JSON only, with no words around it, in this form:
+{"title": "", "author": ""}`;
+
+/** The words an item opens with, up to `most` letters of them: a PDF's first pages, or the
+    first sections of a book or an article. */
+async function opening(item, most = 3000) {
+  let words = '';
+  if (item.kind === 'pdf') {
+    const pdf = await Pdf.open(item);
+    try {
+      for (let page = 1; page <= Math.min(pdf.pages, 3) && words.length < most; page++) words += (await Pdf.text(pdf.doc, page)) + '\n';
+    } finally {
+      Pdf.close(pdf);
+    }
+  } else {
+    const book = await Book.open(item);
+    for (let at = 0; at < Math.min(book.sections.length, 6) && words.length < most; at++) words += (await Book.text(item, book, at)).textContent.replace(/\s+/g, ' ').trim() + '\n';
+  }
+  return words.trim().slice(0, most);
+}
+
+/** Asks the model in use what an item is called and who it is by. Gives { title, author }
+    (either may be empty: not to be told), { error } or { cancelled }. */
+async function askDetails(key, item) {
+  let words = '';
+  try {
+    words = await opening(item);
+  } catch {
+    return { error: 'It could not be opened to be read.' };
+  }
+  if (!words) return { error: 'Its title and author could not be found.' };
+  const text = `Called at present: ${item.title}\nBy, at present: ${item.author || '(no one)'}\n\nIt opens:\n${words}`;
+  const said = await window.api.connections.once(key, { system: DETAILS, text });
+  if (!said?.ok) return said?.cancelled ? { cancelled: true } : { error: said?.error || 'That did not work. Try again.' };
+  return detailsOf(String(said.text ?? '')) ?? { error: 'That did not work. Try again.' };
+}
+
+/** What the model said, as { title, author }; null if it cannot be read. */
+function detailsOf(text) {
+  try {
+    const answer = JSON.parse(text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1));
+    const tidy = (words) => (typeof words === 'string' ? words.replace(/\s+/g, ' ').trim().slice(0, 200) : '');
+    return { title: tidy(answer?.title), author: tidy(answer?.author) };
+  } catch {
+    return null;
+  }
+}
+
+/** The dialog: a field for the title and one for the author, and, beside its own title, with
+    a model in use and something to read, the way to have them filled in. Its button keeps
+    what the fields say. */
+function openDetails(item) {
+  const form = el('form', 'modal details');
+  form.setAttribute('role', 'dialog');
+  form.setAttribute('aria-modal', 'true');
+  form.setAttribute('aria-labelledby', 'details-title');
+  const heading = el('h2', 'modal-title', 'Edit details');
+  heading.id = 'details-title';
+  const field = (name, value, none) => {
+    const input = el('input', 'add-field details-field');
+    input.type = 'text';
+    input.value = value ?? '';
+    input.placeholder = none;
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    const label = el('label', 'details-name', name);
+    label.append(input);
+    return { label, input };
+  };
+  const title = field('Title', item.title, 'No title');
+  const author = field('Author', item.author, 'No author');
+  const cancel = el('button', 'set-button', 'Cancel');
+  cancel.type = 'button';
+  cancel.addEventListener('click', closeDialog);
+  const keep = el('button', 'set-button filing-go', 'Save');
+  const able = () => (keep.disabled = !title.input.value.trim()); // a title cannot be emptied
+  title.input.addEventListener('input', able);
+  const foot = el('div', 'filing-foot');
+  foot.append(cancel, keep);
+  const head = el('div', 'modal-head');
+  head.append(heading);
+  form.append(head, title.label, author.label);
+
+  // Filling them in, from beside the dialog's title: asked for, it reads; answered, the fields say what it said, and the
+  // same line puts back what they said before.
+  let open = true;
+  let key = null;
+  if (item.file && canAsk()) {
+    const fill = el('button', 'details-fill');
+    fill.type = 'button';
+    const mark = el('span', 'icon asterisk', '*');
+    mark.setAttribute('aria-hidden', 'true');
+    const words = el('span', '', 'Fill in');
+    fill.append(mark, words);
+    const said = el('p', 'add-said wrong details-said');
+    said.setAttribute('aria-live', 'polite');
+    said.hidden = true;
+    let before = null; // what the fields said before they were filled in, while that can be put back
+    const rest = (now) => {
+      fill.classList.remove('busy');
+      fill.disabled = false;
+      words.textContent = now;
+      key = null;
+    };
+    fill.addEventListener('click', async () => {
+      said.hidden = true;
+      if (before) {
+        [title.input.value, author.input.value] = before;
+        before = null;
+        able();
+        return rest('Fill in');
+      }
+      key = 'details' + Date.now();
+      fill.classList.add('busy');
+      fill.disabled = true;
+      words.textContent = 'Reading…';
+      const answer = await askDetails(key, item);
+      if (!open || answer.cancelled) return;
+      if (answer.error || !(answer.title || answer.author)) {
+        said.textContent = answer.error || 'Its title and author could not be found.';
+        said.hidden = false;
+        return rest('Fill in');
+      }
+      before = [title.input.value, author.input.value];
+      if (answer.title) title.input.value = answer.title;
+      if (answer.author) author.input.value = answer.author;
+      able();
+      rest('Undo');
+    });
+    head.append(fill);
+    form.append(said);
+  }
+  form.append(foot);
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!title.input.value.trim()) return;
+    item.title = title.input.value.replace(/\s+/g, ' ').trim();
+    item.author = author.input.value.replace(/\s+/g, ' ').trim();
+    closeDialog();
+    drawShelf();
+  });
+  openDialog(form, false, () => {
+    open = false;
+    if (key) window.api.connections.cancel(key);
+  });
+  title.input.focus();
+  title.input.select();
 }
 
 /** Adds books and PDFs to the library: they are chosen in a dialog, or are the files dropped
@@ -1278,7 +1695,8 @@ function drawShelf() {
   save();
   // Home greets you in place of its name, with the week's reading beside the greeting.
   $('heading').textContent = tab.home ? greeting() : tab.name;
-  const beside = tab.home && items.length ? weekly() : null;
+  if (!tab.shelves) filed = null; // (a sorting can be put back only while its page is the one shown)
+  const beside = tab.home && items.length ? weekly() : tab.shelves && filed ? filedNote() : null;
   $('heading-side').replaceChildren(...(beside ? [beside] : []));
   if (tab.home) return $('shelf-body').replaceChildren(...home());
   if (tab.shelves) return $('shelf-body').replaceChildren(...shelves());
@@ -3821,12 +4239,12 @@ function settings() {
       'Library',
       '',
       null,
-      row('Appearance', look, { more: 'For the library. What you read has its own theme.' }),
+      row('Appearance', look),
       row('Location', places, { more: () => about?.folder ?? '' }),
     ),
     part(
       'Text',
-      'How books and articles are set. These are the same choices as the text button gives while you read.',
+      '',
       sample,
       row('Theme', dots, { value: () => THEMES.find(([id]) => id === worn())[1] }),
       row('Typeface', text('face', FACES, (button, [, , family]) => (button.style.fontFamily = family))),
@@ -3836,7 +4254,7 @@ function settings() {
     ),
     part(
       'Reading',
-      'Scrolling, or one page at a time, chosen apart for books and for articles. A PDF always scrolls.',
+      '',
       null,
       row('Books', text('reading', READINGS)),
       row('Articles', text('readingArticles', READINGS)),
