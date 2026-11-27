@@ -8,7 +8,9 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/run.test.mjs",
-    "package": "electron-packager . Inquisitive --platform=darwin --arch=arm64 --icon=assets/icon.icns --app-bundle-id=me.vgnshiyer.inquisitive --out=dist --overwrite --ignore='^/design' --ignore='^/dist' --ignore='^/test' --ignore='/node_modules/@anthropic-ai/claude-agent-sdk-' --ignore='/node_modules/(@napi-rs|@google|@aws-sdk|@aws|@smithy|protobufjs|@protobufjs|@types)(/|$)' && codesign --force --deep --sign \"$(security find-identity -v -p codesigning | awk '/Developer ID Application/ { print $2; exit }' | grep . || echo -)\" dist/Inquisitive-darwin-arm64/Inquisitive.app"
+    "pack": "electron-packager . Inquisitive --platform=darwin --arch=arm64 --icon=assets/icon.icns --app-bundle-id=me.vgnshiyer.inquisitive --out=dist --overwrite --ignore='^/design' --ignore='^/dist' --ignore='^/test' --ignore='/node_modules/@anthropic-ai/claude-agent-sdk-' --ignore='/node_modules/(@napi-rs|@google|@aws-sdk|@aws|@smithy|protobufjs|@protobufjs|@types)(/|$)'",
+    "package": "npm run pack && codesign --force --deep --sign \"$(security find-identity -v -p codesigning | awk '/Developer ID Application/ { print $2; exit }' | grep . || echo -)\" dist/Inquisitive-darwin-arm64/Inquisitive.app",
+    "release": "sh release.sh"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",

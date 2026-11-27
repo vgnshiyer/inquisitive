@@ -37,11 +37,8 @@ What you ask goes from your Mac to the model you chose, and nowhere else.
 ## Install
 
 Download the `.dmg` from the [latest release](../../releases/latest), open it, and drag
-Inquisitive to Applications. It is built for Apple silicon.
-
-The app is signed with a Developer ID but is not notarized by Apple. The first time you
-open it, macOS may say it could not check the app: open System Settings, go to Privacy and
-Security, and choose Open Anyway.
+Inquisitive to Applications. It is built for Apple silicon, signed with a Developer ID and
+notarized by Apple.
 
 ## Run from source
 
@@ -71,6 +68,17 @@ npm run package
 
 Builds `dist/Inquisitive-darwin-arm64/Inquisitive.app` and signs it with the Developer ID
 Application certificate in your keychain, if there is one.
+
+## Release
+
+```sh
+npm run release
+```
+
+Builds the app signed with the hardened runtime, has Apple notarize it, and puts it in
+`dist/Inquisitive-<version>-arm64.dmg`, which is signed and notarized too. It needs a
+Developer ID Application certificate in your keychain, and your notarization credentials
+stored once under the name `inquisitive` (`release.sh` says how).
 
 ## Where things are
 
